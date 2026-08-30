@@ -259,7 +259,7 @@ export const useGame = create<Store>((set, get) => ({
     const battle = get().battle;
     if (!battle) return;
     sfx.melee();
-    set({ battle: confirmMelee(battle, targetId), resolveTimer: 0.75 });
+    set({ battle: confirmMelee(battle, targetId), resolveTimer: 0.95 });
   },
   fireAt: (targetId) => {
     const battle = get().battle;
@@ -268,7 +268,7 @@ export const useGame = create<Store>((set, get) => ({
     if (unit?.type === "sniper") sfx.sniper();
     else if (unit?.type === "machine_gunner") sfx.mg();
     else sfx.shot();
-    set({ battle: confirmShoot(battle, targetId), resolveTimer: 0.88 });
+    set({ battle: confirmShoot(battle, targetId), resolveTimer: 1.15 });
   },
   end: () => {
     const battle = get().battle;
@@ -317,7 +317,7 @@ export const useGame = create<Store>((set, get) => ({
         set({
           battle: next,
           aiTimer: extra,
-          resolveTimer: next.phase === "resolving" ? 0.88 : get().resolveTimer,
+          resolveTimer: next.phase === "resolving" ? 1.15 : get().resolveTimer,
         });
       } else {
         set({ battle, aiTimer });

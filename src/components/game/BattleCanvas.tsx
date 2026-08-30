@@ -139,7 +139,7 @@ function Scene() {
         );
       })}
       {selected && <MoveOverlay battle={battle} unit={selected} />}
-      <CombatFx events={battle.fx} />
+      <CombatFx events={battle.fx ?? []} />
       <MapControls
         enableDamping
         dampingFactor={0.12}

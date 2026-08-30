@@ -64,7 +64,7 @@ export function spawnShotFx(
       by: 1.0,
       bz: to.z,
       age: 0,
-      life: 0.5,
+      life: 0.72,
       tint,
     });
     events.push({
@@ -77,7 +77,7 @@ export function spawnShotFx(
       by: ty,
       bz: to.z,
       age: -0.08,
-      life: 0.36,
+      life: 0.5,
       tint: fxTint(attacker.faction, "impact"),
     });
     return events;
@@ -92,7 +92,7 @@ export function spawnShotFx(
     by: ay,
     bz: from.z,
     age: 0,
-    life: 0.24,
+    life: 0.32,
     tint,
   });
   targets.forEach((t, i) => {
@@ -108,7 +108,7 @@ export function spawnShotFx(
       by: ty,
       bz: to.z,
       age: -i * 0.07,
-      life: 0.62,
+      life: 1.15,
       tint,
     });
     events.push({
@@ -121,7 +121,7 @@ export function spawnShotFx(
       by: ty,
       bz: to.z,
       age: -0.14 - i * 0.07,
-      life: 0.38,
+      life: 0.48,
       tint: fxTint(attacker.faction, "impact"),
     });
   });
