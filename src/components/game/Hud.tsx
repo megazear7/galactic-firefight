@@ -2,7 +2,7 @@ import { Flag, Pause, SkipForward, Swords, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { actOptions, useGame } from "@/game/store";
 import { UNIT_STATS, FACTION_NAME, SPRITE_SRC } from "@/game/units";
-import { whyImmobile } from "@/game/battle";
+import { activationsCap, activationsDone, whyImmobile } from "@/game/battle";
 
 export function Hud() {
   const battle = useGame((s) => s.battle);
@@ -21,15 +21,23 @@ export function Hud() {
   const opts = selected ? actOptions(battle, selected) : { ranged: [], melee: [] };
   const yours = battle.turn === battle.playerFaction;
   const over = battle.phase === "gameOver";
+  const used = activationsDone(battle);
+  const cap = activationsCap(battle);
 
   return (
     <div className="pointer-events-none absolute inset-0 flex flex-col">
       <header className="pointer-events-auto flex items-start justify-between gap-3 p-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:p-4">
         <div className="rounded-[var(--radius-lg)] border border-border bg-bg-elevated/90 px-3 py-2 backdrop-blur-sm">
-          <p className="font-display text-[11px] uppercase tracking-[0.22em] text-muted">Round {battle.round}</p>
+          <p className="font-display text-[11px] uppercase tracking-[0.22em] text-muted">
+            Round {battle.round} · {used}/{cap} activations
+          </p>
           <p className="font-display text-lg font-semibold leading-tight">{FACTION_NAME[battle.turn]}</p>
           <p className="text-xs text-subtle">
-            {yours ? "Your activation · right-drag pans · scroll zooms" : battle.mode === "single" ? "Opposing force" : "Waiting on opponent"}
+            {yours
+              ? "Click a point to move · right-drag pans · scroll zooms"
+              : battle.mode === "single"
+                ? "Opposing force"
+                : "Waiting on opponent"}
           </p>
         </div>
         <Button variant="secondary" size="icon" onClick={() => settingsOpen(true)} aria-label="Settings">

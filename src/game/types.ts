@@ -1,4 +1,5 @@
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
+export const ACTIVATIONS_PER_TURN = 5;
 
 export type Faction = "empire" | "brood";
 export type UnitType =
@@ -55,6 +56,7 @@ export type UnitState = {
   turnsSinceShot: number;
   revealed: boolean;
   engagedAtTurnStart: boolean;
+  overwatchedThisTurn: boolean;
   alive: boolean;
 };
 
@@ -84,12 +86,15 @@ export type Phase =
   | "enemyTurn"
   | "gameOver";
 
+export type PathPoint = { col: number; row: number };
+
 export type PendingMove = {
   unitId: string;
-  path: Array<{ col: number; row: number }>;
+  path: PathPoint[];
   destCol: number;
   destRow: number;
   facing: number;
+  overwatchDone: boolean;
 };
 
 export type PendingShot = {
@@ -100,10 +105,16 @@ export type PendingShot = {
 
 export type FxEvent = {
   id: string;
-  kind: "muzzle" | "impact" | "melee" | "flag";
-  x: number;
-  z: number;
-  at: number;
+  kind: "tracer" | "muzzle" | "impact" | "slash";
+  ax: number;
+  ay: number;
+  az: number;
+  bx: number;
+  by: number;
+  bz: number;
+  age: number;
+  life: number;
+  tint: string;
 };
 
 export type BattleState = {
@@ -124,6 +135,7 @@ export type BattleState = {
   playerFaction: Faction;
   enemyFaction: Faction;
   mode: PlayMode;
+  fx: FxEvent[];
 };
 
 export type ArmyLoadout = Partial<Record<UnitType, number>>;

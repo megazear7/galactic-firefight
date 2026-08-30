@@ -16,6 +16,7 @@ import {
   stepMove,
   updateFacing,
   waitUnit,
+  ageFx,
 } from "./battle";
 import { meleeEnemies, rangedTargets } from "./combat";
 import { sfx, unlockAudio, applyVolumes } from "./audio";
@@ -224,18 +225,18 @@ export const useGame = create<Store>((set, get) => ({
     }
   },
   hoverTile: (col, row) => {
+    set({ hoverCol: col, hoverRow: row });
     const battle = get().battle;
-    if (!battle) {
-      set({ hoverCol: col, hoverRow: row });
-      return;
-    }
-    let next = { ...battle, hoverCol: col, hoverRow: row };
+    if (!battle) return;
+    if (battle.phase === "moving" || battle.phase === "resolving" || battle.phase === "enemyTurn") return;
     if (battle.phase === "aimFacing" && battle.pendingMove && col !== null && row !== null) {
       const dest = { col: battle.pendingMove.destCol, row: battle.pendingMove.destRow };
       const facing = Math.atan2(row - dest.row, col - dest.col);
-      next = updateFacing(next, facing);
+      set({ battle: updateFacing({ ...battle, hoverCol: col, hoverRow: row }, facing) });
+      return;
     }
-    set({ battle: next, hoverCol: col, hoverRow: row });
+    if (battle.hoverCol === col && battle.hoverRow === row) return;
+    set({ battle: { ...battle, hoverCol: col, hoverRow: row } });
   },
   confirmFacing: () => {
     const battle = get().battle;
@@ -258,7 +259,7 @@ export const useGame = create<Store>((set, get) => ({
     const battle = get().battle;
     if (!battle) return;
     sfx.melee();
-    set({ battle: confirmMelee(battle, targetId), resolveTimer: 0.45 });
+    set({ battle: confirmMelee(battle, targetId), resolveTimer: 0.75 });
   },
   fireAt: (targetId) => {
     const battle = get().battle;
@@ -267,7 +268,7 @@ export const useGame = create<Store>((set, get) => ({
     if (unit?.type === "sniper") sfx.sniper();
     else if (unit?.type === "machine_gunner") sfx.mg();
     else sfx.shot();
-    set({ battle: confirmShoot(battle, targetId), resolveTimer: 0.4 });
+    set({ battle: confirmShoot(battle, targetId), resolveTimer: 0.88 });
   },
   end: () => {
     const battle = get().battle;
@@ -278,11 +279,12 @@ export const useGame = create<Store>((set, get) => ({
   tick: (dt) => {
     let { battle, aiTimer, resolveTimer } = get();
     if (!battle) return;
+    battle = ageFx(battle, dt);
     if (battle.phase === "moving") {
+      const prevFx = battle.fx.length;
       const next = stepMove(battle, dt);
-      if (next.phase === "act" || next.phase === "select" || next.phase === "gameOver") {
-        if (next.phase === "gameOver") sfx.lose();
-      }
+      if (next.fx.length > prevFx) sfx.shot();
+      if (next.phase === "gameOver") sfx.lose();
       set({ battle: next });
       return;
     }
@@ -295,7 +297,7 @@ export const useGame = create<Store>((set, get) => ({
         else sfx.hit();
         set({ battle: next, resolveTimer: 0, aiTimer: next.phase === "enemyTurn" ? 0.5 : 0 });
       } else {
-        set({ resolveTimer });
+        set({ battle, resolveTimer });
       }
       return;
     }
@@ -304,16 +306,25 @@ export const useGame = create<Store>((set, get) => ({
       if (aiTimer <= 0) {
         const next = applyAiIntent(battle);
         const extra =
-          next.phase === "moving" ? 0 : next.phase === "resolving" ? 0.35 : 0.55;
+          next.phase === "moving" ? 0 : next.phase === "resolving" ? 0.4 : 0.5;
+        if (next.phase === "resolving") {
+          const attacker = next.units.find((u) => u.id === next.pendingShot?.attackerId);
+          if (next.pendingShot?.kind === "melee") sfx.melee();
+          else if (attacker?.type === "sniper") sfx.sniper();
+          else if (attacker?.type === "machine_gunner") sfx.mg();
+          else sfx.shot();
+        }
         set({
           battle: next,
           aiTimer: extra,
-          resolveTimer: next.phase === "resolving" ? 0.4 : get().resolveTimer,
+          resolveTimer: next.phase === "resolving" ? 0.88 : get().resolveTimer,
         });
       } else {
-        set({ aiTimer });
+        set({ battle, aiTimer });
       }
+      return;
     }
+    if (battle !== get().battle) set({ battle });
   },
   persist: (client) => {
     const { record, battle } = get();

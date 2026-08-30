@@ -1,49 +1,110 @@
-import { dist, inBounds, isBlocked } from "./map";
+import { circleHitsTerrain, dist } from "./map";
 import { UNIT_STATS } from "./units";
-import type { BattleMap, UnitState } from "./types";
+import { hitsBlocker, type Blocker } from "./pathfinding";
+import type { BattleMap, PathPoint, UnitState, UnitType } from "./types";
+
+export function unitRadius(type: UnitType) {
+  return 0.3 * UNIT_STATS[type].size;
+}
+
+export function losRadius(type: UnitType) {
+  return 0.38 * UNIT_STATS[type].size;
+}
+
+export function unitBlockers(units: UnitState[], exceptId?: string): Blocker[] {
+  const out: Blocker[] = [];
+  for (const u of units) {
+    if (!u.alive) continue;
+    if (exceptId && u.id === exceptId) continue;
+    out.push({ col: u.col, row: u.row, radius: unitRadius(u.type) });
+  }
+  return out;
+}
 
 export function occupiedSet(units: UnitState[], exceptId?: string) {
   const s = new Set<string>();
   for (const u of units) {
     if (!u.alive) continue;
     if (exceptId && u.id === exceptId) continue;
-    s.add(`${u.col},${u.row}`);
+    s.add(`${Math.round(u.col * 4) / 4},${Math.round(u.row * 4) / 4}`);
   }
   return s;
 }
 
+function unitBlocksSample(
+  col: number,
+  row: number,
+  units: UnitState[],
+  skip: Set<string>,
+) {
+  for (const u of units) {
+    if (!u.alive || skip.has(u.id)) continue;
+    const r = losRadius(u.type);
+    const dx = col - u.col;
+    const dy = row - u.row;
+    if (dx * dx + dy * dy < r * r) return true;
+  }
+  return false;
+}
+
+/** Sampled line of sight: walls/structures and other unit bodies block. */
 export function hasLos(
   map: BattleMap,
-  a: { col: number; row: number },
-  b: { col: number; row: number },
+  a: PathPoint,
+  b: PathPoint,
+  units: UnitState[] = [],
+  exceptIds: string[] = [],
 ) {
-  if (!inBounds(a.col, a.row, map) || !inBounds(b.col, b.row, map)) return false;
-  let x0 = a.col;
-  let y0 = a.row;
-  const x1 = b.col;
-  const y1 = b.row;
-  const dx = Math.abs(x1 - x0);
-  const dy = Math.abs(y1 - y0);
-  const sx = x0 < x1 ? 1 : -1;
-  const sy = y0 < y1 ? 1 : -1;
-  let err = dx - dy;
-  while (x0 !== x1 || y0 !== y1) {
-    const e2 = 2 * err;
-    if (e2 > -dy) {
-      err -= dy;
-      x0 += sx;
-    }
-    if (e2 < dx) {
-      err += dx;
-      y0 += sy;
-    }
-    if (x0 === x1 && y0 === y1) break;
-    if (isBlocked(map, x0, y0)) return false;
+  const skip = new Set(exceptIds);
+  const len = dist(a, b);
+  if (len < 0.08) return true;
+  const steps = Math.max(8, Math.ceil(len * 14));
+  for (let s = 1; s < steps; s++) {
+    const t = s / steps;
+    const col = a.col + (b.col - a.col) * t;
+    const row = a.row + (b.row - a.row) * t;
+    if (circleHitsTerrain(map, col, row, 0.07)) return false;
+    const fromA = t * len;
+    const fromB = (1 - t) * len;
+    if (fromA < 0.34 || fromB < 0.34) continue;
+    if (unitBlocksSample(col, row, units, skip)) return false;
   }
   return true;
 }
 
-export function angleTo(from: { col: number; row: number }, to: { col: number; row: number }) {
+/**
+ * Polar horizon of what `unit` can see. Each entry is the first blocked
+ * (or max-range) point along that ray — used to build the vis fan.
+ */
+export function sightHorizon(
+  unit: UnitState,
+  map: BattleMap,
+  units: UnitState[],
+  maxRange: number,
+  rays = 160,
+): PathPoint[] {
+  const skip = new Set([unit.id]);
+  const pts: PathPoint[] = [];
+  const steps = Math.max(10, Math.ceil(maxRange * 12));
+  for (let i = 0; i < rays; i++) {
+    const a = (i / rays) * Math.PI * 2;
+    const dx = Math.cos(a);
+    const dy = Math.sin(a);
+    let last: PathPoint = { col: unit.col, row: unit.row };
+    for (let s = 1; s <= steps; s++) {
+      const t = (s / steps) * maxRange;
+      const col = unit.col + dx * t;
+      const row = unit.row + dy * t;
+      if (circleHitsTerrain(map, col, row, 0.07)) break;
+      if (t > 0.34 && unitBlocksSample(col, row, units, skip)) break;
+      last = { col, row };
+    }
+    pts.push(last);
+  }
+  return pts;
+}
+
+export function angleTo(from: PathPoint, to: PathPoint) {
   return Math.atan2(to.row - from.row, to.col - from.col);
 }
 
@@ -54,7 +115,7 @@ export function deltaAngle(a: number, b: number) {
   return d;
 }
 
-export function inArc(unit: UnitState, target: { col: number; row: number }) {
+export function inArc(unit: UnitState, target: PathPoint) {
   const stats = UNIT_STATS[unit.type];
   if (stats.arc >= 359) return true;
   const to = angleTo(unit, target);
@@ -67,16 +128,15 @@ export function isStealthed(unit: UnitState, viewer: UnitState | null) {
   if (!stats.stealth) return false;
   if (unit.revealed) return false;
   if (unit.shotThisTurn) return false;
-  if (unit.turnsSinceShot === 0 && unit.revealed) return false;
   if (viewer && dist(unit, viewer) <= stats.stealthRevealRange + 0.05) return false;
   return true;
 }
 
-export function visibleTo(viewer: UnitState, target: UnitState, map: BattleMap) {
+export function visibleTo(viewer: UnitState, target: UnitState, map: BattleMap, units: UnitState[]) {
   if (!viewer.alive || !target.alive) return false;
   if (viewer.faction === target.faction) return true;
   if (isStealthed(target, viewer)) return false;
-  return hasLos(map, viewer, target);
+  return hasLos(map, viewer, target, units, [viewer.id, target.id]);
 }
 
 export function meleeEnemies(unit: UnitState, units: UnitState[]) {
@@ -85,7 +145,7 @@ export function meleeEnemies(unit: UnitState, units: UnitState[]) {
     (o) =>
       o.alive &&
       o.faction !== unit.faction &&
-      dist(unit, o) <= stats.meleeRange + 0.01,
+      dist(unit, o) <= stats.meleeRange + unitRadius(o.type) + 0.05,
   );
 }
 
@@ -97,7 +157,7 @@ export function rangedTargets(unit: UnitState, units: UnitState[], map: BattleMa
     if (!o.alive || o.faction === unit.faction) return false;
     if (dist(unit, o) > stats.range + 0.05) return false;
     if (!inArc(unit, o)) return false;
-    if (!visibleTo(unit, o, map)) return false;
+    if (!visibleTo(unit, o, map, units)) return false;
     return true;
   });
 }
@@ -118,7 +178,7 @@ export function shotVictims(attacker: UnitState, primary: UnitState, units: Unit
         if (dist(primary, u) > stats.multiTargetRadius + 0.05) return false;
         if (dist(attacker, u) > stats.range + 0.05) return false;
         if (!inArc(attacker, u)) return false;
-        if (!visibleTo(attacker, u, map)) return false;
+        if (!visibleTo(attacker, u, map, units)) return false;
         return true;
       })
       .slice(0, Math.max(0, stats.maxTargets - 1));
@@ -127,36 +187,29 @@ export function shotVictims(attacker: UnitState, primary: UnitState, units: Unit
   return [...ids];
 }
 
-export function overwatchShots(
+/** Closest eligible watcher that has not overwatched this turn. */
+export function pickOverwatch(
   mover: UnitState,
-  from: { col: number; row: number },
-  to: { col: number; row: number },
+  pos: PathPoint,
   units: UnitState[],
   map: BattleMap,
-) {
-  const watchers = units.filter((u) => {
-    if (!u.alive || u.faction === mover.faction) return false;
-    return UNIT_STATS[u.type].range > 0;
-  });
-  const hits: Array<{ watcherId: string; damage: number }> = [];
-  const steps = Math.max(1, Math.round(dist(from, to)));
-  for (let s = 1; s <= steps; s++) {
-    const t = s / steps;
-    const pos = {
-      col: from.col + (to.col - from.col) * t,
-      row: from.row + (to.row - from.row) * t,
-    };
-    const sample: UnitState = { ...mover, col: pos.col, row: pos.row };
-    for (const w of watchers) {
-      const stats = UNIT_STATS[w.type];
-      if (stats.overwatchDamage <= 0) continue;
-      if (dist(w, sample) > stats.range + 0.05) continue;
-      if (!inArc(w, sample)) continue;
-      if (!visibleTo(w, sample, map)) continue;
-      hits.push({ watcherId: w.id, damage: stats.overwatchDamage });
+): { watcherId: string; damage: number } | null {
+  const sample: UnitState = { ...mover, col: pos.col, row: pos.row };
+  let best: { watcherId: string; damage: number; d: number } | null = null;
+  for (const w of units) {
+    if (!w.alive || w.faction === mover.faction) continue;
+    if (w.overwatchedThisTurn) continue;
+    const stats = UNIT_STATS[w.type];
+    if (stats.overwatchDamage <= 0 || stats.range <= 0) continue;
+    const d = dist(w, sample);
+    if (d > stats.range + 0.05) continue;
+    if (!inArc(w, sample)) continue;
+    if (!visibleTo(w, sample, map, units)) continue;
+    if (!best || d < best.d) {
+      best = { watcherId: w.id, damage: stats.overwatchDamage, d };
     }
   }
-  return hits;
+  return best ? { watcherId: best.watcherId, damage: best.damage } : null;
 }
 
 export function applyDamage(units: UnitState[], id: string, amount: number) {
@@ -166,3 +219,13 @@ export function applyDamage(units: UnitState[], id: string, amount: number) {
     return { ...u, hp, alive: hp > 0 };
   });
 }
+
+export function canSeePoint(unit: UnitState, point: PathPoint, map: BattleMap, units: UnitState[]) {
+  if (circleHitsTerrain(map, point.col, point.row, 0.05)) return false;
+  if (hitsBlocker(point.col, point.row, unitBlockers(units, unit.id), 0.12)) {
+    /* standing on another unit is not 'seen ground' but LOS can still pass nearby */
+  }
+  return hasLos(map, unit, point, units, [unit.id]);
+}
+
+export { dist };

@@ -23,14 +23,51 @@ export function inBounds(col: number, row: number, map: BattleMap) {
   return col >= 0 && row >= 0 && col < map.cols && row < map.rows;
 }
 
+export function tileIndex(v: number) {
+  return Math.floor(v + 0.5);
+}
+
 export function tileAt(map: BattleMap, col: number, row: number): TileKind {
-  if (!inBounds(col, row, map)) return "wall";
-  return map.tiles[idx(col, row, map.cols)] ?? "wall";
+  const c = tileIndex(col);
+  const r = tileIndex(row);
+  if (!inBounds(c, r, map)) return "wall";
+  return map.tiles[idx(c, r, map.cols)] ?? "wall";
 }
 
 export function isBlocked(map: BattleMap, col: number, row: number) {
-  const t = tileAt(map, col, row);
+  const c = Number.isInteger(col) ? col : tileIndex(col);
+  const r = Number.isInteger(row) ? row : tileIndex(row);
+  if (!inBounds(c, r, map)) return true;
+  const t = map.tiles[idx(c, r, map.cols)] ?? "wall";
   return t === "wall" || t === "structure";
+}
+
+export function clamp(v: number, lo: number, hi: number) {
+  return v < lo ? lo : v > hi ? hi : v;
+}
+
+/** Circle vs wall/structure AABBs and map edges, in tile space. */
+export function circleHitsTerrain(map: BattleMap, col: number, row: number, radius: number) {
+  const pad = radius;
+  if (col < -0.5 + pad || row < -0.5 + pad || col > map.cols - 0.5 - pad || row > map.rows - 0.5 - pad) {
+    return true;
+  }
+  const c0 = Math.floor(col - radius);
+  const c1 = Math.ceil(col + radius);
+  const r0 = Math.floor(row - radius);
+  const r1 = Math.ceil(row + radius);
+  const hitR = radius + 0.02;
+  for (let tc = c0; tc <= c1; tc++) {
+    for (let tr = r0; tr <= r1; tr++) {
+      if (!isBlocked(map, tc, tr)) continue;
+      const nx = clamp(col, tc - 0.5, tc + 0.5);
+      const ny = clamp(row, tr - 0.5, tr + 0.5);
+      const dx = col - nx;
+      const dy = row - ny;
+      if (dx * dx + dy * dy < hitR * hitR) return true;
+    }
+  }
+  return false;
 }
 
 export function tileToWorld(col: number, row: number, map: BattleMap) {
@@ -39,10 +76,16 @@ export function tileToWorld(col: number, row: number, map: BattleMap) {
   return { x, z };
 }
 
+export function worldToPoint(x: number, z: number, map: BattleMap) {
+  return {
+    col: x / TILE + (map.cols - 1) / 2,
+    row: z / TILE + (map.rows - 1) / 2,
+  };
+}
+
 export function worldToTile(x: number, z: number, map: BattleMap) {
-  const col = Math.round(x / TILE + (map.cols - 1) / 2);
-  const row = Math.round(z / TILE + (map.rows - 1) / 2);
-  return { col, row };
+  const p = worldToPoint(x, z, map);
+  return { col: tileIndex(p.col), row: tileIndex(p.row) };
 }
 
 export function dist(a: { col: number; row: number }, b: { col: number; row: number }) {

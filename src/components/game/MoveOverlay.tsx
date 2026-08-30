@@ -1,18 +1,41 @@
+import { useMemo } from "react";
 import { Line } from "@react-three/drei";
 import { TILE, tileToWorld } from "@/game/map";
 import { UNIT_STATS } from "@/game/units";
-import { reachableTiles } from "@/game/battle";
+import { previewPath } from "@/game/battle";
 import { rangedTargets } from "@/game/combat";
-import type { BattleState, UnitState } from "@/game/types";
+import type { BattleState, PathPoint, UnitState } from "@/game/types";
 
 function circlePoints(radius: number, y: number) {
   const pts: Array<[number, number, number]> = [];
-  const n = 64;
+  const n = 72;
   for (let i = 0; i <= n; i++) {
     const a = (i / n) * Math.PI * 2;
     pts.push([Math.cos(a) * radius, y, Math.sin(a) * radius]);
   }
   return pts;
+}
+
+function worldPath(path: PathPoint[], map: BattleState["map"]): Array<[number, number, number]> {
+  return path.map((p) => {
+    const w = tileToWorld(p.col, p.row, map);
+    return [w.x, 0.08, w.z];
+  });
+}
+
+function DestMark({ x, z, color }: { x: number; z: number; color: string }) {
+  return (
+    <group position={[x, 0, z]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.06, 0]}>
+        <ringGeometry args={[0.1, 0.22, 24]} />
+        <meshBasicMaterial color={color} transparent opacity={0.9} depthWrite={false} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.055, 0]}>
+        <circleGeometry args={[0.08, 16]} />
+        <meshBasicMaterial color={color} transparent opacity={0.35} depthWrite={false} />
+      </mesh>
+    </group>
+  );
 }
 
 function ArcLines({
@@ -28,7 +51,7 @@ function ArcLines({
 }) {
   const half = ((arc * Math.PI) / 180) / 2;
   const pts: Array<[number, number, number]> = [[0, 0.07, 0]];
-  const steps = 12;
+  const steps = 16;
   for (let i = 0; i <= steps; i++) {
     const a = facing - half + (i / steps) * half * 2;
     pts.push([Math.cos(a) * range, 0.07, Math.sin(a) * range]);
@@ -43,23 +66,28 @@ export function MoveOverlay({ battle, unit }: { battle: BattleState; unit: UnitS
   const dest = battle.pendingMove
     ? tileToWorld(battle.pendingMove.destCol, battle.pendingMove.destRow, battle.map)
     : origin;
-  const reach = battle.phase === "aimMove" ? reachableTiles(battle, unit) : null;
   const facing = battle.pendingMove?.facing ?? unit.facing;
   const targets =
     battle.phase === "aimShoot" ? rangedTargets(unit, battle.units, battle.map) : [];
 
+  const hoverPath = useMemo(() => {
+    if (battle.phase !== "aimMove") return null;
+    if (battle.hoverCol == null || battle.hoverRow == null) return null;
+    return previewPath(battle, unit, battle.hoverCol, battle.hoverRow);
+  }, [battle, unit, battle.hoverCol, battle.hoverRow, battle.phase]);
+
+  const confirmed =
+    battle.phase === "aimFacing" && battle.pendingMove ? worldPath(battle.pendingMove.path, battle.map) : null;
+  const hoverPts = hoverPath && hoverPath.length > 1 ? worldPath(hoverPath, battle.map) : null;
+  const hoverEnd =
+    battle.phase === "aimMove" && hoverPath && hoverPath.length
+      ? tileToWorld(hoverPath[hoverPath.length - 1].col, hoverPath[hoverPath.length - 1].row, battle.map)
+      : battle.phase === "aimMove" && battle.hoverCol != null && battle.hoverRow != null
+        ? tileToWorld(battle.hoverCol, battle.hoverRow, battle.map)
+        : null;
+
   return (
     <group>
-      {reach &&
-        [...reach.values()].map((t) => {
-          const p = tileToWorld(t.col, t.row, battle.map);
-          return (
-            <mesh key={`${t.col}:${t.row}`} rotation={[-Math.PI / 2, 0, 0]} position={[p.x, 0.03, p.z]}>
-              <circleGeometry args={[TILE * 0.38, 16]} />
-              <meshBasicMaterial color="#6fbf7a" transparent opacity={0.18} depthWrite={false} />
-            </mesh>
-          );
-        })}
       {(battle.phase === "aimMove" || battle.phase === "aimFacing") && (
         <group position={[origin.x, 0, origin.z]}>
           <Line
@@ -72,8 +100,16 @@ export function MoveOverlay({ battle, unit }: { battle: BattleState; unit: UnitS
           />
         </group>
       )}
+      {hoverPts && (
+        <Line points={hoverPts} color="#8ed49a" dashed dashSize={0.14} gapSize={0.1} lineWidth={2.2} />
+      )}
+      {hoverEnd && <DestMark x={hoverEnd.x} z={hoverEnd.z} color="#8ed49a" />}
+      {confirmed && confirmed.length > 1 && (
+        <Line points={confirmed} color="#6fbf7a" lineWidth={2.6} />
+      )}
       {battle.phase === "aimFacing" && battle.pendingMove && (
         <group position={[dest.x, 0, dest.z]}>
+          <DestMark x={0} z={0} color="#6fbf7a" />
           <mesh position={[0, 0.55, 0]}>
             <coneGeometry args={[0.12, 0.4, 4]} />
             <meshStandardMaterial color="#6fbf7a" />

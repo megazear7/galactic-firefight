@@ -1,16 +1,10 @@
-import { dist, inBounds, isBlocked } from "./map";
-import type { BattleMap } from "./types";
+import { circleHitsTerrain, dist } from "./map";
+import type { BattleMap, PathPoint } from "./types";
 
-const DIRS = [
-  [1, 0, 1],
-  [-1, 0, 1],
-  [0, 1, 1],
-  [0, -1, 1],
-  [1, 1, Math.SQRT2],
-  [1, -1, Math.SQRT2],
-  [-1, 1, Math.SQRT2],
-  [-1, -1, Math.SQRT2],
-] as const;
+export type Blocker = { col: number; row: number; radius: number };
+
+/** Sub-tile navigation grid. 6 cells per tile ≈ 0.17 tile steps. */
+export const NAV_RES = 6;
 
 type Node = { col: number; row: number; g: number; f: number; i: number };
 
@@ -58,125 +52,128 @@ class MinHeap {
   }
 }
 
-function octile(dc: number, dr: number) {
-  const dx = Math.abs(dc);
-  const dy = Math.abs(dr);
-  return Math.max(dx, dy) + (Math.SQRT2 - 1) * Math.min(dx, dy);
+const DIRS = [
+  [1, 0, 1],
+  [-1, 0, 1],
+  [0, 1, 1],
+  [0, -1, 1],
+  [1, 1, Math.SQRT2],
+  [1, -1, Math.SQRT2],
+  [-1, 1, Math.SQRT2],
+  [-1, -1, Math.SQRT2],
+] as const;
+
+export function hitsBlocker(col: number, row: number, blockers: Blocker[], extra = 0) {
+  for (const b of blockers) {
+    const r = b.radius + extra;
+    const dx = col - b.col;
+    const dy = row - b.row;
+    if (dx * dx + dy * dy < r * r) return true;
+  }
+  return false;
 }
 
-export function findPath(
+export function blockedAt(
   map: BattleMap,
-  start: { col: number; row: number },
-  goal: { col: number; row: number },
-  occupied: Set<string>,
-  maxCost = 99,
-): Array<{ col: number; row: number }> | null {
-  if (!inBounds(goal.col, goal.row, map) || isBlocked(map, goal.col, goal.row)) return null;
-  const goalKey = `${goal.col},${goal.row}`;
-  if (occupied.has(goalKey) && (start.col !== goal.col || start.row !== goal.row)) return null;
+  col: number,
+  row: number,
+  blockers: Blocker[],
+  radius: number,
+) {
+  if (circleHitsTerrain(map, col, row, radius)) return true;
+  return hitsBlocker(col, row, blockers, radius);
+}
 
-  const cols = map.cols;
-  const key = (c: number, r: number) => r * cols + c;
-  const came = new Int32Array(cols * map.rows).fill(-1);
-  const bestG = new Float64Array(cols * map.rows).fill(Infinity);
-  const open = new MinHeap();
-  const si = key(start.col, start.row);
-  bestG[si] = 0;
-  open.push({ col: start.col, row: start.row, g: 0, f: octile(goal.col - start.col, goal.row - start.row), i: si });
+function navSize(map: BattleMap) {
+  return { nx: map.cols * NAV_RES, ny: map.rows * NAV_RES };
+}
 
-  while (open.size) {
-    const cur = open.pop()!;
-    if (Math.abs(cur.g - bestG[cur.i]) > 1e-9) continue;
-    if (cur.col === goal.col && cur.row === goal.row) {
-      const path: Array<{ col: number; row: number }> = [];
-      let i = cur.i;
-      while (i >= 0) {
-        const c = i % cols;
-        const r = (i / cols) | 0;
-        path.push({ col: c, row: r });
-        i = came[i];
+export function cellCenter(i: number, j: number) {
+  return { col: (i + 0.5) / NAV_RES - 0.5, row: (j + 0.5) / NAV_RES - 0.5 };
+}
+
+export function toCell(col: number, row: number, nx: number, ny: number) {
+  const i = Math.max(0, Math.min(nx - 1, Math.floor((col + 0.5) * NAV_RES)));
+  const j = Math.max(0, Math.min(ny - 1, Math.floor((row + 0.5) * NAV_RES)));
+  return { i, j };
+}
+
+function walkableCell(
+  map: BattleMap,
+  i: number,
+  j: number,
+  nx: number,
+  ny: number,
+  blockers: Blocker[],
+  radius: number,
+  allowStart?: { i: number; j: number },
+) {
+  if (i < 0 || j < 0 || i >= nx || j >= ny) return false;
+  if (allowStart && i === allowStart.i && j === allowStart.j) return true;
+  const c = cellCenter(i, j);
+  return !blockedAt(map, c.col, c.row, blockers, radius);
+}
+
+export function snapWalkable(
+  map: BattleMap,
+  goal: PathPoint,
+  blockers: Blocker[],
+  radius: number,
+  maxDist = 1.15,
+): PathPoint | null {
+  if (!blockedAt(map, goal.col, goal.row, blockers, radius)) return goal;
+  const { nx, ny } = navSize(map);
+  const g = toCell(goal.col, goal.row, nx, ny);
+  let best: PathPoint | null = null;
+  let bestD = maxDist;
+  const span = Math.ceil(maxDist * NAV_RES) + 1;
+  for (let dj = -span; dj <= span; dj++) {
+    for (let di = -span; di <= span; di++) {
+      const i = g.i + di;
+      const j = g.j + dj;
+      if (!walkableCell(map, i, j, nx, ny, blockers, radius)) continue;
+      const c = cellCenter(i, j);
+      const d = dist(c, goal);
+      if (d < bestD) {
+        bestD = d;
+        best = c;
       }
-      path.reverse();
-      return path;
-    }
-    for (const [dc, dr, cost] of DIRS) {
-      const nc = cur.col + dc;
-      const nr = cur.row + dr;
-      if (!inBounds(nc, nr, map) || isBlocked(map, nc, nr)) continue;
-      if (dc !== 0 && dr !== 0) {
-        if (isBlocked(map, cur.col + dc, cur.row) && isBlocked(map, cur.col, cur.row + dr)) continue;
-      }
-      const nk = `${nc},${nr}`;
-      if (occupied.has(nk) && !(nc === goal.col && nr === goal.row)) continue;
-      const ni = key(nc, nr);
-      const g = cur.g + cost;
-      if (g > maxCost + 0.01) continue;
-      if (g + 1e-6 >= bestG[ni]) continue;
-      bestG[ni] = g;
-      came[ni] = cur.i;
-      open.push({ col: nc, row: nr, g, f: g + octile(goal.col - nc, goal.row - nr), i: ni });
     }
   }
-  return null;
+  return best;
 }
 
-export function reachable(
+function clearSegment(
   map: BattleMap,
-  start: { col: number; row: number },
-  move: number,
-  occupied: Set<string>,
-): Map<string, { col: number; row: number; cost: number }> {
-  const out = new Map<string, { col: number; row: number; cost: number }>();
-  const cols = map.cols;
-  const keyI = (c: number, r: number) => r * cols + c;
-  const bestG = new Float64Array(cols * map.rows).fill(Infinity);
-  const open = new MinHeap();
-  const si = keyI(start.col, start.row);
-  bestG[si] = 0;
-  open.push({ col: start.col, row: start.row, g: 0, f: 0, i: si });
-  out.set(`${start.col},${start.row}`, { col: start.col, row: start.row, cost: 0 });
-
-  while (open.size) {
-    const cur = open.pop()!;
-    if (Math.abs(cur.g - bestG[cur.i]) > 1e-9) continue;
-    for (const [dc, dr, cost] of DIRS) {
-      const nc = cur.col + dc;
-      const nr = cur.row + dr;
-      if (!inBounds(nc, nr, map) || isBlocked(map, nc, nr)) continue;
-      if (dc !== 0 && dr !== 0) {
-        if (isBlocked(map, cur.col + dc, cur.row) && isBlocked(map, cur.col, cur.row + dr)) continue;
-      }
-      const nk = `${nc},${nr}`;
-      if (occupied.has(nk)) continue;
-      const g = cur.g + cost;
-      if (g > move + 0.01) continue;
-      const ni = keyI(nc, nr);
-      if (g + 1e-6 >= bestG[ni]) continue;
-      bestG[ni] = g;
-      out.set(nk, { col: nc, row: nr, cost: g });
-      open.push({ col: nc, row: nr, g, f: g, i: ni });
-    }
+  a: PathPoint,
+  b: PathPoint,
+  blockers: Blocker[],
+  radius: number,
+) {
+  const len = dist(a, b);
+  const steps = Math.max(2, Math.ceil(len * 10));
+  for (let s = 1; s < steps; s++) {
+    const t = s / steps;
+    const col = a.col + (b.col - a.col) * t;
+    const row = a.row + (b.row - a.row) * t;
+    if (blockedAt(map, col, row, blockers, radius)) return false;
   }
-  return out;
-}
-
-export function pathCost(path: Array<{ col: number; row: number }>) {
-  let c = 0;
-  for (let i = 1; i < path.length; i++) c += dist(path[i - 1], path[i]);
-  return c;
+  return true;
 }
 
 export function stringPull(
+  path: PathPoint[],
   map: BattleMap,
-  path: Array<{ col: number; row: number }>,
-): Array<{ col: number; row: number }> {
+  blockers: Blocker[],
+  radius: number,
+): PathPoint[] {
   if (path.length <= 2) return path;
   const out = [path[0]];
   let i = 0;
   while (i < path.length - 1) {
     let best = i + 1;
     for (let j = path.length - 1; j > i + 1; j--) {
-      if (clearLine(map, path[i], path[j])) {
+      if (clearSegment(map, path[i], path[j], blockers, radius)) {
         best = j;
         break;
       }
@@ -187,17 +184,213 @@ export function stringPull(
   return out;
 }
 
+export function pathCost(path: PathPoint[]) {
+  let c = 0;
+  for (let i = 1; i < path.length; i++) c += dist(path[i - 1], path[i]);
+  return c;
+}
+
+export function pointAlong(path: PathPoint[], t: number): PathPoint {
+  if (path.length === 0) return { col: 0, row: 0 };
+  if (path.length === 1 || t <= 0) return path[0];
+  if (t >= 1) return path[path.length - 1];
+  const total = Math.max(1e-6, pathCost(path));
+  let d = t * total;
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1];
+    const b = path[i];
+    const seg = dist(a, b);
+    if (d <= seg || i === path.length - 1) {
+      const u = seg < 1e-6 ? 1 : d / seg;
+      return { col: a.col + (b.col - a.col) * u, row: a.row + (b.row - a.row) * u };
+    }
+    d -= seg;
+  }
+  return path[path.length - 1];
+}
+
+export function truncatePath(path: PathPoint[], maxCost: number): PathPoint[] {
+  if (path.length <= 1) return path;
+  if (pathCost(path) <= maxCost + 1e-6) return path;
+  const out = [path[0]];
+  let used = 0;
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1];
+    const b = path[i];
+    const seg = dist(a, b);
+    if (used + seg >= maxCost) {
+      const u = seg < 1e-6 ? 1 : (maxCost - used) / seg;
+      out.push({ col: a.col + (b.col - a.col) * u, row: a.row + (b.row - a.row) * u });
+      return out;
+    }
+    out.push(b);
+    used += seg;
+  }
+  return out;
+}
+
+type Search = {
+  nx: number;
+  ny: number;
+  sc: { i: number; j: number };
+  bestG: Float64Array;
+  came: Int32Array;
+};
+
+function searchReachable(
+  map: BattleMap,
+  start: PathPoint,
+  blockers: Blocker[],
+  radius: number,
+  maxCost: number,
+): Search {
+  const { nx, ny } = navSize(map);
+  const key = (i: number, j: number) => j * nx + i;
+  const sc = toCell(start.col, start.row, nx, ny);
+  const bestG = new Float64Array(nx * ny).fill(Infinity);
+  const came = new Int32Array(nx * ny).fill(-1);
+  const open = new MinHeap();
+  const si = key(sc.i, sc.j);
+  bestG[si] = 0;
+  open.push({ col: sc.i, row: sc.j, g: 0, f: 0, i: si });
+  const cellStep = 1 / NAV_RES;
+
+  while (open.size) {
+    const cur = open.pop()!;
+    if (Math.abs(cur.g - bestG[cur.i]) > 1e-9) continue;
+    for (const [dc, dr, step] of DIRS) {
+      const ni = cur.col + dc;
+      const nj = cur.row + dr;
+      if (!walkableCell(map, ni, nj, nx, ny, blockers, radius, sc)) continue;
+      if (dc !== 0 && dr !== 0) {
+        const a = walkableCell(map, cur.col + dc, cur.row, nx, ny, blockers, radius, sc);
+        const b = walkableCell(map, cur.col, cur.row + dr, nx, ny, blockers, radius, sc);
+        // Both orthogonals must be free — no squeezing through wall corners.
+        if (!a || !b) continue;
+      }
+      const g = cur.g + step * cellStep;
+      if (g > maxCost + 0.08) continue;
+      const idx = key(ni, nj);
+      if (g + 1e-6 >= bestG[idx]) continue;
+      bestG[idx] = g;
+      came[idx] = cur.i;
+      open.push({ col: ni, row: nj, g, f: g, i: idx });
+    }
+  }
+  return { nx, ny, sc, bestG, came };
+}
+
+function reconstruct(search: Search, endIndex: number, start: PathPoint): PathPoint[] {
+  const { nx, came } = search;
+  const cells: PathPoint[] = [];
+  let i = endIndex;
+  const guard = nx * search.ny + 2;
+  let n = 0;
+  while (i >= 0 && n++ < guard) {
+    const ci = i % nx;
+    const cj = (i / nx) | 0;
+    cells.push(cellCenter(ci, cj));
+    i = came[i];
+  }
+  cells.reverse();
+  if (cells.length === 0) cells.push(start);
+  cells[0] = { col: start.col, row: start.row };
+  return cells;
+}
+
+/**
+ * Any-angle path toward `goal` that stays within `maxCost` tile-units.
+ * If the exact click is out of range or blocked, walks as far as possible
+ * toward it, routing around terrain and other units.
+ */
+export function findPath(
+  map: BattleMap,
+  start: PathPoint,
+  goal: PathPoint,
+  blockers: Blocker[],
+  radius: number,
+  maxCost = 99,
+): PathPoint[] | null {
+  const snapped = snapWalkable(map, goal, blockers, radius);
+  const target = snapped ?? goal;
+  if (dist(start, target) < 0.045) {
+    const dest = snapped && !blockedAt(map, goal.col, goal.row, blockers, radius) ? goal : target;
+    return [start, dest];
+  }
+
+  const search = searchReachable(map, start, blockers, radius, maxCost);
+  const { nx, ny, bestG } = search;
+  const gc = toCell(target.col, target.row, nx, ny);
+  const goalIdx = gc.j * nx + gc.i;
+
+  let end = -1;
+  if (bestG[goalIdx] < Infinity) {
+    end = goalIdx;
+  } else {
+    let bestScore = Infinity;
+    for (let idx = 0; idx < bestG.length; idx++) {
+      if (bestG[idx] === Infinity) continue;
+      const ci = idx % nx;
+      const cj = (idx / nx) | 0;
+      const c = cellCenter(ci, cj);
+      const d = dist(c, target);
+      const score = d + bestG[idx] * 0.02;
+      if (score < bestScore) {
+        bestScore = score;
+        end = idx;
+      }
+    }
+  }
+  if (end < 0) return [start];
+
+  let cells = reconstruct(search, end, start);
+  const last = cells[cells.length - 1];
+  if (snapped && dist(last, snapped) > 0.02 && pathCost(cells) + dist(last, snapped) <= maxCost + 0.12) {
+    if (clearSegment(map, last, snapped, blockers, radius)) cells.push(snapped);
+  }
+  const exactOk = !blockedAt(map, goal.col, goal.row, blockers, radius);
+  if (exactOk) {
+    const tail = cells[cells.length - 1];
+    if (dist(tail, goal) > 0.02 && pathCost(cells) + dist(tail, goal) <= maxCost + 0.12) {
+      if (clearSegment(map, tail, goal, blockers, radius)) cells.push(goal);
+    }
+  }
+
+  cells = stringPull(cells, map, blockers, radius);
+  cells = truncatePath(cells, maxCost + 0.08);
+  if (pathCost(cells) > maxCost + 0.16) return null;
+  return cells;
+}
+
+export function reachable(
+  map: BattleMap,
+  start: PathPoint,
+  move: number,
+  blockers: Blocker[],
+  radius: number,
+): Array<{ col: number; row: number; cost: number }> {
+  const search = searchReachable(map, start, blockers, radius, move);
+  const { nx, bestG } = search;
+  const out: Array<{ col: number; row: number; cost: number }> = [
+    { col: start.col, row: start.row, cost: 0 },
+  ];
+  for (let idx = 0; idx < bestG.length; idx++) {
+    const g = bestG[idx];
+    if (g === Infinity || g <= 0) continue;
+    const ci = idx % nx;
+    const cj = (idx / nx) | 0;
+    const c = cellCenter(ci, cj);
+    out.push({ col: c.col, row: c.row, cost: g });
+  }
+  return out;
+}
+
 export function clearLine(
   map: BattleMap,
-  a: { col: number; row: number },
-  b: { col: number; row: number },
+  a: PathPoint,
+  b: PathPoint,
+  blockers: Blocker[] = [],
+  radius = 0.12,
 ) {
-  const steps = Math.max(Math.abs(b.col - a.col), Math.abs(b.row - a.row), 1);
-  for (let i = 1; i < steps; i++) {
-    const t = i / steps;
-    const c = Math.round(a.col + (b.col - a.col) * t);
-    const r = Math.round(a.row + (b.row - a.row) * t);
-    if (isBlocked(map, c, r)) return false;
-  }
-  return true;
+  return clearSegment(map, a, b, blockers, radius);
 }

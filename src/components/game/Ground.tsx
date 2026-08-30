@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import * as THREE from "three";
-import { TILE, tileToWorld } from "@/game/map";
+import { TILE, tileToWorld, worldToPoint } from "@/game/map";
 import type { BattleMap } from "@/game/types";
 import type { ThreeEvent } from "@react-three/fiber";
 
@@ -9,11 +9,11 @@ loader.setCrossOrigin("anonymous");
 
 export function Ground({
   map,
-  onTile,
+  onPoint,
   onHover,
 }: {
   map: BattleMap;
-  onTile: (col: number, row: number, shift: boolean) => void;
+  onPoint: (col: number, row: number) => void;
   onHover: (col: number | null, row: number | null) => void;
 }) {
   const ground = useMemo(() => {
@@ -29,11 +29,9 @@ export function Ground({
 
   const pick = (e: ThreeEvent<PointerEvent>, click: boolean) => {
     e.stopPropagation();
-    const { x, z } = { x: e.point.x, z: e.point.z };
-    const col = Math.round(x / TILE + (map.cols - 1) / 2);
-    const row = Math.round(z / TILE + (map.rows - 1) / 2);
-    if (click) onTile(col, row, e.shiftKey);
-    else onHover(col, row);
+    const p = worldToPoint(e.point.x, e.point.z, map);
+    if (click) onPoint(p.col, p.row);
+    else onHover(p.col, p.row);
   };
 
   return (
@@ -41,7 +39,10 @@ export function Ground({
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
         receiveShadow
-        onPointerDown={(e) => pick(e, true)}
+        onPointerDown={(e) => {
+          if (e.button !== 0) return;
+          pick(e, true);
+        }}
         onPointerMove={(e) => pick(e, false)}
         onPointerOut={() => onHover(null, null)}
       >

@@ -1,4 +1,4 @@
-import type { GameRecord, Settings } from "./types";
+import type { BattleState, GameRecord, Settings, UnitState } from "./types";
 import { DEFAULT_SETTINGS, SAVE_VERSION } from "./types";
 import { MEGAZEAR_APP } from "@/lib/identity/config";
 import { UserDataClient, UserDataError } from "@/lib/identity/megazear-users";
@@ -13,6 +13,26 @@ function nowIso() {
 export function newGameId() {
   const rand = Math.random().toString(36).slice(2, 8);
   return `skirmish-${Date.now().toString(36)}-${rand}`;
+}
+
+function migrateUnit(u: UnitState): UnitState {
+  return {
+    ...u,
+    overwatchedThisTurn: u.overwatchedThisTurn ?? false,
+  };
+}
+
+function migrateBattle(raw: BattleState | null): BattleState | null {
+  if (!raw) return null;
+  return {
+    ...raw,
+    version: SAVE_VERSION,
+    fx: raw.fx ?? [],
+    units: raw.units.map(migrateUnit),
+    pendingMove: raw.pendingMove
+      ? { ...raw.pendingMove, overwatchDone: raw.pendingMove.overwatchDone ?? false }
+      : null,
+  };
 }
 
 function migrateGame(raw: GameRecord): GameRecord {
@@ -35,7 +55,7 @@ function migrateGame(raw: GameRecord): GameRecord {
     hostArmy: raw.hostArmy,
     guestArmy: raw.guestArmy,
     seed: raw.seed ?? 1,
-    battle: raw.battle ?? null,
+    battle: migrateBattle(raw.battle ?? null),
   };
 }
 

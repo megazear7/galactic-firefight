@@ -8,6 +8,8 @@ import { dist } from "@/game/map";
 import { Ground } from "./Ground";
 import { UnitVisual } from "./UnitBillboard";
 import { MoveOverlay } from "./MoveOverlay";
+import { VisibilityOverlay } from "./VisibilityOverlay";
+import { CombatFx } from "./CombatFx";
 import { readyUnits } from "@/game/battle";
 
 function Loop() {
@@ -16,6 +18,25 @@ function Loop() {
     tick(Math.min(delta, 0.1));
   });
   return null;
+}
+
+function nearestUnit<T extends { id: string; col: number; row: number; alive: boolean }>(
+  col: number,
+  row: number,
+  units: T[],
+  max = 0.55,
+) {
+  let best: T | null = null;
+  let bestD = max;
+  for (const u of units) {
+    if (!u.alive) continue;
+    const d = dist({ col, row }, u);
+    if (d < bestD) {
+      bestD = d;
+      best = u;
+    }
+  }
+  return best;
 }
 
 function Scene() {
@@ -30,6 +51,12 @@ function Scene() {
   if (!battle) return null;
   const selected = battle.units.find((u) => u.id === battle.selectedId) ?? null;
   const ready = new Set(readyUnits(battle).map((u) => u.id));
+  const showVis =
+    selected &&
+    battle.phase !== "moving" &&
+    battle.phase !== "resolving" &&
+    battle.phase !== "gameOver" &&
+    selected.faction === battle.turn;
 
   return (
     <>
@@ -45,27 +72,37 @@ function Scene() {
       <Ground
         map={battle.map}
         onHover={hoverTile}
-        onTile={(col, row) => {
+        onPoint={(col, row) => {
           if (battle.phase === "aimFacing") {
             clickTile(col, row);
             confirmFacing();
             return;
           }
           if (battle.phase === "aimShoot") {
-            const t = battle.units.find(
-              (u) => u.alive && u.col === col && u.row === row && u.faction !== selected?.faction,
+            const t = nearestUnit(
+              col,
+              row,
+              battle.units.filter((u) => u.alive && u.faction !== selected?.faction),
+              0.9,
             );
             if (t) fireAt(t.id);
             return;
           }
-          const occupant = battle.units.find((u) => u.alive && Math.round(u.col) === col && Math.round(u.row) === row);
-          if (occupant) {
+          const occupant = nearestUnit(col, row, battle.units, 0.5);
+          if (occupant && battle.phase !== "aimMove") {
+            select(occupant.id);
+            return;
+          }
+          if (occupant && occupant.faction === battle.playerFaction && occupant.id !== selected?.id) {
             select(occupant.id);
             return;
           }
           clickTile(col, row);
         }}
       />
+      {showVis && selected && (
+        <VisibilityOverlay unit={selected} map={battle.map} units={battle.units} />
+      )}
       {battle.units.map((u) => {
         if (!u.alive) return null;
         const viewer =
@@ -75,9 +112,7 @@ function Scene() {
               if (!best) return x;
               return dist(u, x) < dist(u, best) ? x : best;
             }, null);
-        const hidden =
-          u.faction !== battle.playerFaction &&
-          isStealthed(u, viewer);
+        const hidden = u.faction !== battle.playerFaction && isStealthed(u, viewer);
         return (
           <group
             key={u.id}
@@ -104,6 +139,7 @@ function Scene() {
         );
       })}
       {selected && <MoveOverlay battle={battle} unit={selected} />}
+      <CombatFx events={battle.fx} />
       <MapControls
         enableDamping
         dampingFactor={0.12}
