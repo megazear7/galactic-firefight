@@ -1,0 +1,16 @@
+node_modules
+.vercel
+dist
+.output
+.nitro
+.tanstack
+*.log
+.env
+.env.*
+!.env.example
+screenshots
+artifacts
+.grok
+AGENTS.md
+AGENTS.project.md
+src/routeTree.gen.ts
