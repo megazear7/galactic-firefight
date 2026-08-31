@@ -1,4 +1,4 @@
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 export const ACTIVATIONS_PER_TURN = 5;
 
 export type Faction = "empire" | "brood";
@@ -86,6 +86,8 @@ export type Phase =
   | "enemyTurn"
   | "gameOver";
 
+export type ActMode = "move" | "fire";
+
 export type PathPoint = { col: number; row: number };
 
 export type PendingMove = {
@@ -136,6 +138,8 @@ export type BattleState = {
   enemyFaction: Faction;
   mode: PlayMode;
   fx: FxEvent[];
+  explored: boolean[];
+  actMode: ActMode;
 };
 
 export type ArmyLoadout = Partial<Record<UnitType, number>>;

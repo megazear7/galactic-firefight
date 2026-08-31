@@ -2,6 +2,7 @@ import { circleHitsTerrain, dist } from "./map";
 import { UNIT_STATS } from "./units";
 import { hitsBlocker, type Blocker } from "./pathfinding";
 import type { BattleMap, PathPoint, UnitState, UnitType } from "./types";
+import { sightRange } from "./units";
 
 export function unitRadius(type: UnitType) {
   return 0.3 * UNIT_STATS[type].size;
@@ -135,6 +136,7 @@ export function isStealthed(unit: UnitState, viewer: UnitState | null) {
 export function visibleTo(viewer: UnitState, target: UnitState, map: BattleMap, units: UnitState[]) {
   if (!viewer.alive || !target.alive) return false;
   if (viewer.faction === target.faction) return true;
+  if (dist(viewer, target) > sightRange(viewer.type) + 0.05) return false;
   if (isStealthed(target, viewer)) return false;
   return hasLos(map, viewer, target, units, [viewer.id, target.id]);
 }

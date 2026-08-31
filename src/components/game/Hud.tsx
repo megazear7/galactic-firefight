@@ -3,12 +3,15 @@ import { Button } from "@/components/ui/button";
 import { actOptions, useGame } from "@/game/store";
 import { UNIT_STATS, FACTION_NAME, SPRITE_SRC } from "@/game/units";
 import { activationsCap, activationsDone, whyImmobile } from "@/game/battle";
+import { Minimap } from "./Minimap";
+import { cn } from "@/lib/utils";
 
 export function Hud() {
   const battle = useGame((s) => s.battle);
   const settingsOpen = useGame((s) => s.setSettingsOpen);
   const shoot = useGame((s) => s.shoot);
   const skip = useGame((s) => s.skip);
+  const setMode = useGame((s) => s.setMode);
   const end = useGame((s) => s.end);
   const melee = useGame((s) => s.melee);
   const confirmFacing = useGame((s) => s.confirmFacing);
@@ -34,7 +37,7 @@ export function Hud() {
           <p className="font-display text-lg font-semibold leading-tight">{FACTION_NAME[battle.turn]}</p>
           <p className="text-xs text-subtle">
             {yours
-              ? "Click a point to move · right-drag pans · scroll zooms"
+              ? "WASD / arrows pan · toggle Fire to shoot in place"
               : battle.mode === "single"
                 ? "Opposing force"
                 : "Waiting on opponent"}
@@ -103,18 +106,39 @@ export function Hud() {
           </div>
 
           {yours && selected.faction === battle.playerFaction && (
-            <div className="mt-4 flex flex-wrap gap-2">
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              {!selected.acted && (
+                <div className="flex rounded-[var(--radius-sm)] border border-border bg-surface-2 p-0.5">
+                  <button
+                    type="button"
+                    disabled={selected.moved}
+                    onClick={() => setMode("move")}
+                    className={cn(
+                      "h-9 rounded-[calc(var(--radius-sm)-2px)] px-3 text-xs font-medium",
+                      battle.actMode === "move" ? "bg-accent text-accent-fg" : "text-muted hover:text-fg",
+                      selected.moved && "opacity-40",
+                    )}
+                  >
+                    Move
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMode("fire")}
+                    className={cn(
+                      "h-9 rounded-[calc(var(--radius-sm)-2px)] px-3 text-xs font-medium",
+                      battle.actMode === "fire" ? "bg-accent text-accent-fg" : "text-muted hover:text-fg",
+                    )}
+                  >
+                    Fire
+                  </button>
+                </div>
+              )}
               {battle.phase === "aimFacing" && (
                 <Button onClick={confirmFacing}>
                   <Flag className="size-4" /> Confirm move
                 </Button>
               )}
-              {battle.phase === "aimMove" && (
-                <Button variant="secondary" onClick={skip}>
-                  Hold position
-                </Button>
-              )}
-              {(battle.phase === "act" || battle.phase === "aimShoot") && (
+              {(battle.phase === "act" || battle.phase === "aimShoot" || battle.actMode === "fire") && (
                 <>
                   <Button onClick={shoot} disabled={opts.ranged.length === 0}>
                     <Target className="size-4" /> Fire
@@ -136,6 +160,10 @@ export function Hud() {
           )}
         </aside>
       )}
+
+      <div className="pointer-events-none absolute bottom-4 right-3 z-10 sm:right-4">
+        <Minimap />
+      </div>
 
       {yours && !selected && !over && (
         <div className="pointer-events-auto mx-auto mb-4">

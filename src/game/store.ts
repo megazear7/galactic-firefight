@@ -12,12 +12,14 @@ import {
   endTurn,
   resolveShot,
   selectUnit,
-  skipMove,
+  setActMode,
   stepMove,
   updateFacing,
   waitUnit,
   ageFx,
 } from "./battle";
+import { revealExplored } from "./vision";
+import type { ActMode } from "./types";
 import { meleeEnemies, rangedTargets } from "./combat";
 import { sfx, unlockAudio, applyVolumes } from "./audio";
 import {
@@ -58,6 +60,8 @@ type Store = {
   battle: BattleState | null;
   hoverCol: number | null;
   hoverRow: number | null;
+  camFocus: { x: number; z: number; seq: number } | null;
+  camView: { x: number; z: number; w: number; h: number } | null;
   inviteEmail: string;
   joinHostId: string | null;
   joinGameId: string | null;
@@ -79,6 +83,9 @@ type Store = {
   hoverTile: (col: number | null, row: number | null) => void;
   confirmFacing: () => void;
   skip: () => void;
+  setMode: (mode: ActMode) => void;
+  requestCam: (x: number, z: number) => void;
+  setCamView: (view: { x: number; z: number; w: number; h: number }) => void;
   shoot: () => void;
   melee: (targetId: string) => void;
   fireAt: (targetId: string) => void;
@@ -119,6 +126,8 @@ export const useGame = create<Store>((set, get) => ({
   battle: null,
   hoverCol: null,
   hoverRow: null,
+  camFocus: null,
+  camView: null,
   inviteEmail: "",
   joinHostId: null,
   joinGameId: null,
@@ -247,9 +256,21 @@ export const useGame = create<Store>((set, get) => ({
   skip: () => {
     const battle = get().battle;
     if (!battle) return;
-    if (battle.phase === "aimMove") set({ battle: skipMove(battle) });
-    else if (battle.phase === "act" || battle.phase === "aimShoot") set({ battle: waitUnit(battle) });
+    if (battle.phase === "act" || battle.phase === "aimShoot") {
+      sfx.ui();
+      set({ battle: waitUnit(battle) });
+    }
   },
+  setMode: (mode) => {
+    const battle = get().battle;
+    if (!battle) return;
+    sfx.ui();
+    set({ battle: setActMode(battle, mode) });
+  },
+  requestCam: (x, z) => {
+    set({ camFocus: { x, z, seq: (get().camFocus?.seq ?? 0) + 1 } });
+  },
+  setCamView: (camView) => set({ camView }),
   shoot: () => {
     const battle = get().battle;
     if (!battle) return;
@@ -259,16 +280,18 @@ export const useGame = create<Store>((set, get) => ({
     const battle = get().battle;
     if (!battle) return;
     sfx.melee();
-    set({ battle: confirmMelee(battle, targetId), resolveTimer: 0.95 });
+    set({ battle: confirmMelee(battle, targetId), resolveTimer: 0.75 });
   },
   fireAt: (targetId) => {
     const battle = get().battle;
     if (!battle) return;
     const unit = battle.units.find((u) => u.id === battle.selectedId);
-    if (unit?.type === "sniper") sfx.sniper();
+    if (unit?.faction === "brood") sfx.alien();
+    else if (unit?.type === "sniper") sfx.sniper();
     else if (unit?.type === "machine_gunner") sfx.mg();
     else sfx.shot();
-    set({ battle: confirmShoot(battle, targetId), resolveTimer: 1.15 });
+    const resolveTimer = unit?.type === "machine_gunner" ? 0.62 : 0.48;
+    set({ battle: confirmShoot(battle, targetId), resolveTimer });
   },
   end: () => {
     const battle = get().battle;
@@ -279,7 +302,7 @@ export const useGame = create<Store>((set, get) => ({
   tick: (dt) => {
     let { battle, aiTimer, resolveTimer } = get();
     if (!battle) return;
-    battle = ageFx(battle, dt);
+    battle = revealExplored(ageFx(battle, dt));
     if (battle.phase === "moving") {
       const prevFx = battle.fx.length;
       const next = stepMove(battle, dt);
@@ -306,18 +329,25 @@ export const useGame = create<Store>((set, get) => ({
       if (aiTimer <= 0) {
         const next = applyAiIntent(battle);
         const extra =
-          next.phase === "moving" ? 0 : next.phase === "resolving" ? 0.4 : 0.5;
+          next.phase === "moving" ? 0 : next.phase === "resolving" ? 0.35 : 0.5;
         if (next.phase === "resolving") {
           const attacker = next.units.find((u) => u.id === next.pendingShot?.attackerId);
           if (next.pendingShot?.kind === "melee") sfx.melee();
+          else if (attacker?.faction === "brood") sfx.alien();
           else if (attacker?.type === "sniper") sfx.sniper();
           else if (attacker?.type === "machine_gunner") sfx.mg();
           else sfx.shot();
         }
+        const resolveTimer =
+          next.phase === "resolving"
+            ? next.pendingShot?.kind === "melee"
+              ? 0.75
+              : 0.5
+            : get().resolveTimer;
         set({
           battle: next,
           aiTimer: extra,
-          resolveTimer: next.phase === "resolving" ? 1.15 : get().resolveTimer,
+          resolveTimer,
         });
       } else {
         set({ battle, aiTimer });

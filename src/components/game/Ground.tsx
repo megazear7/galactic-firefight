@@ -9,10 +9,12 @@ loader.setCrossOrigin("anonymous");
 
 export function Ground({
   map,
+  explored,
   onPoint,
   onHover,
 }: {
   map: BattleMap;
+  explored: boolean[];
   onPoint: (col: number, row: number) => void;
   onHover: (col: number | null, row: number | null) => void;
 }) {
@@ -51,6 +53,7 @@ export function Ground({
       </mesh>
       {map.tiles.map((kind, i) => {
         if (kind === "floor") return null;
+        if (!explored[i]) return null;
         const col = i % map.cols;
         const row = Math.floor(i / map.cols);
         const p = tileToWorld(col, row, map);

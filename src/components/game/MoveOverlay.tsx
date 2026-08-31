@@ -57,7 +57,18 @@ function ArcLines({
     pts.push([Math.cos(a) * range, 0.07, Math.sin(a) * range]);
   }
   pts.push([0, 0.07, 0]);
-  return <Line points={pts} color={color} dashed dashSize={0.16} gapSize={0.1} lineWidth={1.5} />;
+  return (
+    <Line
+      points={pts}
+      color={color}
+      dashed
+      dashSize={0.16}
+      gapSize={0.1}
+      lineWidth={1.2}
+      transparent
+      opacity={0.32}
+    />
+  );
 }
 
 export function MoveOverlay({ battle, unit }: { battle: BattleState; unit: UnitState }) {
@@ -96,16 +107,27 @@ export function MoveOverlay({ battle, unit }: { battle: BattleState; unit: UnitS
             dashed
             dashSize={0.18}
             gapSize={0.12}
-            lineWidth={1.5}
+            lineWidth={1.2}
+            transparent
+            opacity={0.32}
           />
         </group>
       )}
       {hoverPts && (
-        <Line points={hoverPts} color="#8ed49a" dashed dashSize={0.14} gapSize={0.1} lineWidth={2.2} />
+        <Line
+          points={hoverPts}
+          color="#8ed49a"
+          dashed
+          dashSize={0.14}
+          gapSize={0.1}
+          lineWidth={1.6}
+          transparent
+          opacity={0.4}
+        />
       )}
       {hoverEnd && <DestMark x={hoverEnd.x} z={hoverEnd.z} color="#8ed49a" />}
       {confirmed && confirmed.length > 1 && (
-        <Line points={confirmed} color="#6fbf7a" lineWidth={2.6} />
+        <Line points={confirmed} color="#6fbf7a" lineWidth={2} transparent opacity={0.45} />
       )}
       {battle.phase === "aimFacing" && battle.pendingMove && (
         <group position={[dest.x, 0, dest.z]}>
@@ -126,8 +148,13 @@ export function MoveOverlay({ battle, unit }: { battle: BattleState; unit: UnitS
             <meshBasicMaterial color="#6fbf7a" />
           </mesh>
           {stats.range > 0 && (
-            <ArcLines facing={facing} arc={stats.arc} range={stats.range * TILE} color="#c5ccd6" />
+            <ArcLines facing={facing} arc={stats.arc} range={stats.range * TILE} color="#d8dde4" />
           )}
+        </group>
+      )}
+      {(battle.phase === "aimShoot" || battle.actMode === "fire") && stats.range > 0 && (
+        <group position={[origin.x, 0, origin.z]}>
+          <ArcLines facing={unit.facing} arc={stats.arc} range={stats.range * TILE} color="#d8dde4" />
         </group>
       )}
       {targets.map((t) => {

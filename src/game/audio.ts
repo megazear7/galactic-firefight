@@ -1,3 +1,4 @@
+import { Howl, Howler } from "howler";
 import type { Settings } from "./types";
 
 type Buses = {
@@ -7,9 +8,39 @@ type Buses = {
   sfx: GainNode;
 };
 
+type SfxName =
+  | "ui"
+  | "confirm"
+  | "move"
+  | "shot"
+  | "sniper"
+  | "mg"
+  | "melee"
+  | "hit"
+  | "win"
+  | "lose"
+  | "alien";
+
+const FILES: Record<SfxName, { src: string; gain: number }> = {
+  ui: { src: "/assets/sfx/ui.mp3", gain: 0.42 },
+  confirm: { src: "/assets/sfx/confirm.mp3", gain: 0.48 },
+  move: { src: "/assets/sfx/move.mp3", gain: 0.38 },
+  shot: { src: "/assets/sfx/shot.mp3", gain: 0.7 },
+  sniper: { src: "/assets/sfx/sniper.mp3", gain: 0.74 },
+  mg: { src: "/assets/sfx/mg.mp3", gain: 0.62 },
+  melee: { src: "/assets/sfx/melee.mp3", gain: 0.68 },
+  hit: { src: "/assets/sfx/hit.mp3", gain: 0.55 },
+  win: { src: "/assets/sfx/win.mp3", gain: 0.58 },
+  lose: { src: "/assets/sfx/lose.mp3", gain: 0.58 },
+  alien: { src: "/assets/sfx/alien.mp3", gain: 0.7 },
+};
+
 let buses: Buses | null = null;
 let musicNodes: OscillatorNode[] = [];
 let unlocked = false;
+let sfxLevel = 1;
+const howls = new Map<SfxName, Howl>();
+const failed = new Set<SfxName>();
 
 function curve(v: number) {
   const x = Math.max(0, Math.min(1, v));
@@ -31,11 +62,48 @@ function getCtx() {
 }
 
 export function applyVolumes(settings: Settings) {
+  sfxLevel = curve(settings.sfx);
+  Howler.volume(curve(settings.master));
+  for (const [name, clip] of howls) {
+    clip.volume(sfxLevel * FILES[name].gain);
+  }
   if (!buses) return;
   const t = buses.ctx.currentTime;
   buses.master.gain.setTargetAtTime(curve(settings.master), t, 0.04);
   buses.music.gain.setTargetAtTime(curve(settings.music) * 0.35, t, 0.04);
-  buses.sfx.gain.setTargetAtTime(curve(settings.sfx), t, 0.04);
+  buses.sfx.gain.setTargetAtTime(sfxLevel, t, 0.04);
+}
+
+function getHowl(name: SfxName) {
+  let clip = howls.get(name);
+  if (clip) return clip;
+  const spec = FILES[name];
+  clip = new Howl({
+    src: [spec.src],
+    volume: sfxLevel * spec.gain,
+    preload: true,
+  });
+  clip.once("loaderror", () => failed.add(name));
+  howls.set(name, clip);
+  return clip;
+}
+
+function playFile(name: SfxName, fallback: () => void) {
+  if (failed.has(name)) {
+    fallback();
+    return;
+  }
+  const clip = getHowl(name);
+  if (clip.state() === "unloaded") {
+    fallback();
+    return;
+  }
+  clip.volume(sfxLevel * FILES[name].gain);
+  if (clip.state() === "loaded") {
+    clip.play();
+    return;
+  }
+  clip.once("load", () => clip.play());
 }
 
 export function unlockAudio(settings: Settings) {
@@ -45,6 +113,7 @@ export function unlockAudio(settings: Settings) {
   if (!unlocked) {
     unlocked = true;
     startMusic();
+    (Object.keys(FILES) as SfxName[]).forEach(getHowl);
   }
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && buses?.ctx.state === "suspended") {
@@ -113,29 +182,39 @@ function tone(freq: number, duration: number, type: OscillatorType, gain: number
 }
 
 export const sfx = {
-  ui: () => tone(420, 0.08, "sine", 0.08),
-  confirm: () => tone(620, 0.12, "triangle", 0.1),
-  move: () => tone(180, 0.16, "sine", 0.06),
-  shot: () => {
-    noiseBurst(0.12, 0.22, 800);
-    tone(320, 0.1, "square", 0.05);
-  },
-  sniper: () => {
-    noiseBurst(0.18, 0.16, 1400);
-    tone(880, 0.14, "sawtooth", 0.04);
-  },
-  mg: () => {
-    noiseBurst(0.22, 0.2, 500);
-    tone(220, 0.16, "square", 0.05);
-  },
-  melee: () => {
-    noiseBurst(0.1, 0.18, 200);
-    tone(90, 0.14, "sawtooth", 0.08);
-  },
-  hit: () => tone(140, 0.12, "triangle", 0.1),
-  win: () => {
-    tone(523, 0.2, "sine", 0.1);
-    setTimeout(() => tone(659, 0.25, "sine", 0.1), 120);
-  },
-  lose: () => tone(90, 0.5, "sine", 0.12),
+  ui: () => playFile("ui", () => tone(420, 0.08, "sine", 0.08)),
+  confirm: () => playFile("confirm", () => tone(620, 0.12, "triangle", 0.1)),
+  move: () => playFile("move", () => tone(180, 0.16, "sine", 0.06)),
+  shot: () =>
+    playFile("shot", () => {
+      noiseBurst(0.12, 0.22, 800);
+      tone(320, 0.1, "square", 0.05);
+    }),
+  sniper: () =>
+    playFile("sniper", () => {
+      noiseBurst(0.18, 0.16, 1400);
+      tone(880, 0.14, "sawtooth", 0.04);
+    }),
+  mg: () =>
+    playFile("mg", () => {
+      noiseBurst(0.22, 0.2, 500);
+      tone(220, 0.16, "square", 0.05);
+    }),
+  melee: () =>
+    playFile("melee", () => {
+      noiseBurst(0.1, 0.18, 200);
+      tone(90, 0.14, "sawtooth", 0.08);
+    }),
+  hit: () => playFile("hit", () => tone(140, 0.12, "triangle", 0.1)),
+  win: () =>
+    playFile("win", () => {
+      tone(523, 0.2, "sine", 0.1);
+      setTimeout(() => tone(659, 0.25, "sine", 0.1), 120);
+    }),
+  lose: () => playFile("lose", () => tone(90, 0.5, "sine", 0.12)),
+  alien: () =>
+    playFile("alien", () => {
+      noiseBurst(0.16, 0.2, 900);
+      tone(240, 0.14, "sawtooth", 0.06);
+    }),
 };

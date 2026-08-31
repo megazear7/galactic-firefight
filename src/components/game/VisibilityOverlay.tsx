@@ -1,11 +1,11 @@
 import { useEffect, useMemo } from "react";
 import * as THREE from "three";
-import { TILE, tileToWorld } from "@/game/map";
+import { tileToWorld } from "@/game/map";
 import { sightHorizon } from "@/game/combat";
+import { sightRange } from "@/game/units";
 import type { BattleMap, UnitState } from "@/game/types";
 
 const RAYS = 168;
-const VISION = 16.5;
 
 export function VisibilityOverlay({
   unit,
@@ -22,7 +22,7 @@ export function VisibilityOverlay({
     .join(";")}`;
 
   const geo = useMemo(() => {
-    const horizon = sightHorizon(unit, map, units, VISION, RAYS);
+    const horizon = sightHorizon(unit, map, units, sightRange(unit.type), RAYS);
     const origin = tileToWorld(unit.col, unit.row, map);
     const n = horizon.length;
     const pos = new Float32Array(n * 9);
@@ -64,24 +64,16 @@ export function VisibilityOverlay({
 
   useEffect(() => () => geo.dispose(), [geo]);
 
-  const origin = tileToWorld((map.cols - 1) / 2, (map.rows - 1) / 2, map);
-
   return (
-    <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[origin.x, 0.028, origin.z]} renderOrder={1}>
-        <planeGeometry args={[map.cols * TILE, map.rows * TILE]} />
-        <meshBasicMaterial color="#0a0c10" transparent opacity={0.26} depthWrite={false} />
-      </mesh>
-      <mesh geometry={geo} renderOrder={2}>
-        <meshBasicMaterial
-          vertexColors
-          transparent
-          opacity={0.32}
-          depthWrite={false}
-          side={THREE.DoubleSide}
-          toneMapped={false}
-        />
-      </mesh>
-    </group>
+    <mesh geometry={geo} renderOrder={2}>
+      <meshBasicMaterial
+        vertexColors
+        transparent
+        opacity={0.1}
+        depthWrite={false}
+        side={THREE.DoubleSide}
+        toneMapped={false}
+      />
+    </mesh>
   );
 }

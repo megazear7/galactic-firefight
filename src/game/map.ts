@@ -1,8 +1,8 @@
 import type { BattleMap, TileKind } from "./types";
 
 export const TILE = 1.55;
-export const MAP_COLS = 16;
-export const MAP_ROWS = 12;
+export const MAP_COLS = 32;
+export const MAP_ROWS = 24;
 
 export function mulberry32(seed: number) {
   let a = seed >>> 0;
@@ -106,12 +106,12 @@ export function generateMap(seed: number): BattleMap {
     tiles[idx(c, r, cols)] = kind;
   };
 
-  const clusters = 7 + Math.floor(rand() * 4);
+  const clusters = 16 + Math.floor(rand() * 8);
   for (let i = 0; i < clusters; i++) {
-    const w = 1 + Math.floor(rand() * 3);
-    const h = 1 + Math.floor(rand() * 2);
-    const c0 = 3 + Math.floor(rand() * (cols - 6 - w));
-    const r0 = Math.floor(rand() * (rows - h));
+    const w = 1 + Math.floor(rand() * 4);
+    const h = 1 + Math.floor(rand() * 3);
+    const c0 = 3 + Math.floor(rand() * Math.max(1, cols - 6 - w));
+    const r0 = Math.floor(rand() * Math.max(1, rows - h));
     const kind: TileKind = rand() > 0.55 ? "structure" : "wall";
     for (let r = 0; r < h; r++) {
       for (let c = 0; c < w; c++) {
@@ -120,7 +120,7 @@ export function generateMap(seed: number): BattleMap {
     }
   }
 
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 22; i++) {
     const c = 4 + Math.floor(rand() * (cols - 8));
     const r = Math.floor(rand() * rows);
     place(c, r, "wall");

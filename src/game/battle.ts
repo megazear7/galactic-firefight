@@ -11,6 +11,7 @@ import {
 import { deployCols, dist, generateMap, openDeployTiles, tileToWorld } from "./map";
 import { findPath, pathCost, pointAlong, reachable } from "./pathfinding";
 import type {
+  ActMode,
   ArmyLoadout,
   BattleState,
   Faction,
@@ -22,6 +23,7 @@ import type {
 } from "./types";
 import { ACTIVATIONS_PER_TURN, SAVE_VERSION } from "./types";
 import { UNIT_STATS, factionUnits, leaderType } from "./units";
+import { emptyMask, revealExplored } from "./vision";
 
 let seq = 1;
 function nid(prefix: string) {
@@ -92,38 +94,49 @@ export function spawnShotFx(
     by: ay,
     bz: from.z,
     age: 0,
-    life: 0.32,
+    life: 0.1,
     tint,
   });
+  const rounds = attacker.type === "machine_gunner" ? 4 : attacker.type === "soldier" ? 2 : 1;
   targets.forEach((t, i) => {
     const to = tileToWorld(t.col, t.row, map);
     const ty = 0.95 * UNIT_STATS[t.type].size;
-    events.push({
-      id: nid("fx"),
-      kind: "tracer",
-      ax: from.x,
-      ay,
-      az: from.z,
-      bx: to.x,
-      by: ty,
-      bz: to.z,
-      age: -i * 0.07,
-      life: 1.15,
-      tint,
-    });
-    events.push({
-      id: nid("fx"),
-      kind: "impact",
-      ax: to.x,
-      ay: ty,
-      az: to.z,
-      bx: to.x,
-      by: ty,
-      bz: to.z,
-      age: -0.14 - i * 0.07,
-      life: 0.48,
-      tint: fxTint(attacker.faction, "impact"),
-    });
+    const dx = to.x - from.x;
+    const dz = to.z - from.z;
+    const span = Math.max(0.04, Math.hypot(dx, dz));
+    const flight = Math.max(0.12, Math.min(0.26, Math.hypot(dx, ty - ay, dz) * 0.048));
+    const px = -dz / span;
+    const pz = dx / span;
+    for (let r = 0; r < rounds; r++) {
+      const delay = i * 0.04 + r * 0.042;
+      const side = r === 0 ? 0 : (r % 2 === 0 ? 1 : -1) * 0.035 * Math.ceil(r / 2);
+      events.push({
+        id: nid("fx"),
+        kind: "tracer",
+        ax: from.x + px * side * 0.35,
+        ay: ay + (r === 0 ? 0 : 0.02),
+        az: from.z + pz * side * 0.35,
+        bx: to.x + px * side,
+        by: ty,
+        bz: to.z + pz * side,
+        age: -delay,
+        life: flight,
+        tint,
+      });
+      events.push({
+        id: nid("fx"),
+        kind: "impact",
+        ax: to.x + px * side * 0.4,
+        ay: ty,
+        az: to.z + pz * side * 0.4,
+        bx: to.x,
+        by: ty,
+        bz: to.z,
+        age: -(delay + flight * 0.92),
+        life: 0.2,
+        tint: fxTint(attacker.faction, "impact"),
+      });
+    }
   });
   return events;
 }
@@ -242,7 +255,7 @@ export function createBattle(opts: {
   );
   const units = markEngaged([...playerUnits, ...enemyUnits]);
   const firstName = opts.first === "empire" ? "Galactic Empire" : "Brood Swarm";
-  return {
+  const state: BattleState = {
     version: SAVE_VERSION,
     map,
     units,
@@ -261,7 +274,10 @@ export function createBattle(opts: {
     enemyFaction,
     mode: opts.mode,
     fx: [],
+    explored: emptyMask(map),
+    actMode: "move",
   };
+  return revealExplored(state);
 }
 
 export function defaultEnemyArmy(faction: Faction, points: PointScale): ArmyLoadout {
@@ -364,17 +380,47 @@ export function hoverFacing(from: { col: number; row: number }, col: number, row
 export function selectUnit(state: BattleState, id: string): BattleState {
   const unit = unitById(state, id);
   if (!unit) return state;
-  if (!canControl(state) && state.phase !== "select" && state.phase !== "act" && state.phase !== "aimMove") {
+  if (
+    !canControl(state) &&
+    state.phase !== "select" &&
+    state.phase !== "act" &&
+    state.phase !== "aimMove" &&
+    state.phase !== "aimShoot"
+  ) {
     return { ...state, selectedId: id };
   }
-  if (unit.faction !== state.turn) return { ...state, selectedId: id, phase: "select", pendingMove: null };
+  if (unit.faction !== state.turn) {
+    return { ...state, selectedId: id, phase: "select", pendingMove: null, actMode: "move" };
+  }
   if (unit.moved && !unit.acted) {
-    return { ...state, selectedId: id, phase: "act", pendingMove: null };
+    return { ...state, selectedId: id, phase: "act", pendingMove: null, actMode: "fire" };
   }
   if (unit.acted || (activationsDone(state) >= ACTIVATIONS_PER_TURN && !unit.moved)) {
-    return { ...state, selectedId: id, phase: "select", pendingMove: null };
+    return { ...state, selectedId: id, phase: "select", pendingMove: null, actMode: "move" };
   }
-  return { ...state, selectedId: id, phase: "aimMove", pendingMove: null };
+  return { ...state, selectedId: id, phase: "aimMove", pendingMove: null, actMode: "move" };
+}
+
+export function setActMode(state: BattleState, mode: ActMode): BattleState {
+  const unit = unitById(state, state.selectedId);
+  if (!unit || unit.acted || unit.faction !== state.turn) return state;
+  if (!canControl(state)) return state;
+  if (mode === "move") {
+    if (unit.moved) return state;
+    return { ...state, actMode: "move", phase: "aimMove", pendingMove: null };
+  }
+  const targets = rangedTargets(unit, state.units, state.map);
+  const melee = meleeEnemies(unit, state.units);
+  return {
+    ...state,
+    actMode: "fire",
+    phase: targets.length ? "aimShoot" : "act",
+    pendingMove: null,
+    log:
+      targets.length || melee.length
+        ? state.log
+        : [log("No eligible targets. Toggle back to move, or wait.", "neutral"), ...state.log].slice(0, 40),
+  };
 }
 
 export function chooseDestination(state: BattleState, col: number, row: number): BattleState {
@@ -497,14 +543,14 @@ export function stepMove(state: BattleState, dt: number): BattleState {
   }
 
   if (progress < 1) {
-    return {
+    return revealExplored({
       ...state,
       units,
       fx,
       log: lines.slice(0, 40),
       moveProgress: progress,
       pendingMove: { ...pending, overwatchDone },
-    };
+    });
   }
 
   units = units.map((u) =>
@@ -518,21 +564,25 @@ export function stepMove(state: BattleState, dt: number): BattleState {
         }
       : u,
   );
-  return resumeSide({
-    ...state,
-    units,
-    fx,
-    log: lines.slice(0, 40),
-    pendingMove: null,
-    moveProgress: 0,
-    selectedId: unit.id,
-    phase: "act",
-  });
+  return revealExplored(
+    resumeSide({
+      ...state,
+      units,
+      fx,
+      log: lines.slice(0, 40),
+      pendingMove: null,
+      moveProgress: 0,
+      selectedId: unit.id,
+      phase: "act",
+      actMode: "fire",
+    }),
+  );
 }
 
 export function skipMove(state: BattleState): BattleState {
   const unit = unitById(state, state.selectedId);
   if (!unit) return state;
+  if (state.phase !== "aimMove" && state.phase !== "aimFacing") return state;
   const units = state.units.map((u) => (u.id === unit.id ? { ...u, moved: true } : u));
   return { ...state, units, phase: "act", pendingMove: null };
 }
@@ -543,6 +593,7 @@ export function beginShoot(state: BattleState): BattleState {
   if (unit.engagedAtTurnStart) {
     return {
       ...state,
+      actMode: "fire",
       log: [log("Engaged at the start of the turn — firearms are silent. Strike or wait.", "neutral"), ...state.log].slice(0, 40),
     };
   }
@@ -550,10 +601,11 @@ export function beginShoot(state: BattleState): BattleState {
   if (targets.length === 0) {
     return {
       ...state,
+      actMode: "fire",
       log: [log("No eligible targets in range, arc, and sight.", "neutral"), ...state.log].slice(0, 40),
     };
   }
-  return { ...state, phase: "aimShoot" };
+  return { ...state, phase: "aimShoot", actMode: "fire" };
 }
 
 export function confirmShoot(state: BattleState, targetId: string): BattleState {
@@ -626,7 +678,7 @@ export function resolveShot(state: BattleState): BattleState {
     selectedId: null,
   });
   if (next.winner) return next;
-  return resumeSide(next);
+  return revealExplored(resumeSide(next));
 }
 
 export function waitUnit(state: BattleState): BattleState {
@@ -669,6 +721,7 @@ export function endTurn(state: BattleState): BattleState {
     selectedId: null,
     pendingMove: null,
     pendingShot: null,
+    actMode: "move",
     log: [log(`${name} — five activations.`, nextTurn), ...state.log].slice(0, 40),
   };
 }

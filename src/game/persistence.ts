@@ -24,6 +24,11 @@ function migrateUnit(u: UnitState): UnitState {
 
 function migrateBattle(raw: BattleState | null): BattleState | null {
   if (!raw) return null;
+  const tiles = raw.map?.tiles?.length ?? 0;
+  const explored =
+    Array.isArray(raw.explored) && raw.explored.length === tiles
+      ? raw.explored.map(Boolean)
+      : Array.from({ length: tiles }, () => false);
   return {
     ...raw,
     version: SAVE_VERSION,
@@ -32,6 +37,8 @@ function migrateBattle(raw: BattleState | null): BattleState | null {
     pendingMove: raw.pendingMove
       ? { ...raw.pendingMove, overwatchDone: raw.pendingMove.overwatchDone ?? false }
       : null,
+    explored,
+    actMode: raw.actMode === "fire" ? "fire" : "move",
   };
 }
 

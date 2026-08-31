@@ -4,7 +4,8 @@ import {
   hasLos,
   pickOverwatch,
 } from "./combat.ts";
-import { createBattle, selectUnit, turnExhausted, waitUnit, activationsDone, activationsCap } from "./battle.ts";
+import { createBattle, selectUnit, setActMode, turnExhausted, waitUnit, activationsDone, activationsCap } from "./battle.ts";
+import { UNIT_STATS } from "./units.ts";
 import { findPath, pathCost, blockedAt } from "./pathfinding.ts";
 import { circleHitsTerrain } from "./map.ts";
 import type { BattleMap, UnitState } from "./types.ts";
@@ -170,6 +171,60 @@ describe("overwatch", () => {
 
     const both = [mover, { ...far, overwatchedThisTurn: true }, closeSpent];
     assert.equal(pickOverwatch(mover, { col: 6, row: 3 }, both, map), null);
+  });
+});
+
+describe("firing arcs", () => {
+  it("uses 180° for soldiers and 60° for snipers and machine gunners", () => {
+    assert.equal(UNIT_STATS.soldier.arc, 180);
+    assert.equal(UNIT_STATS.sniper.arc, 60);
+    assert.equal(UNIT_STATS.machine_gunner.arc, 60);
+  });
+});
+
+describe("fire/move toggle", () => {
+  it("defaults to move and can toggle fire without spending the move", () => {
+    let state = createBattle({
+      seed: 3,
+      playerFaction: "empire",
+      playerArmy: { captain: 1, soldier: 3 },
+      enemyArmy: { tyrant: 1, broodling: 4, spatling: 2 },
+      mode: "single",
+      first: "empire",
+    });
+    const u = state.units.find((x) => x.alive && x.faction === "empire" && !x.acted);
+    assert.ok(u);
+    state = selectUnit(state, u.id);
+    assert.equal(state.phase, "aimMove");
+    assert.equal(state.actMode, "move");
+    state = setActMode(state, "fire");
+    assert.equal(state.actMode, "fire");
+    const afterFire = state.units.find((x) => x.id === u.id);
+    assert.equal(afterFire?.moved, false);
+    assert.equal(afterFire?.acted, false);
+    state = setActMode(state, "move");
+    assert.equal(state.phase, "aimMove");
+    assert.equal(state.actMode, "move");
+  });
+});
+
+describe("fog of war", () => {
+  it("reveals tiles around the player army and hides the far edge", () => {
+    const state = createBattle({
+      seed: 11,
+      playerFaction: "empire",
+      playerArmy: { captain: 1, soldier: 2 },
+      enemyArmy: { tyrant: 1, broodling: 4 },
+      mode: "single",
+      first: "empire",
+    });
+    assert.equal(state.map.cols, 32);
+    assert.equal(state.map.rows, 24);
+    const seen = state.explored.filter(Boolean).length;
+    assert.ok(seen > 8, `expected starting vision, got ${seen}`);
+    assert.ok(seen < state.explored.length * 0.85, "should not reveal the whole map at start");
+    const far = (state.map.rows - 1) * state.map.cols + (state.map.cols - 1);
+    assert.equal(state.explored[far], false);
   });
 });
 

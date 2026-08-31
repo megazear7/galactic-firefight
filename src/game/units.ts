@@ -30,7 +30,7 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
     faction: "empire",
     name: "Soldier",
     role: "Line infantry",
-    description: "Medium-ranged assault rifle and a 270° arc. The backbone of every imperial firing line.",
+    description: "Medium-ranged assault rifle and a 180° arc. The backbone of every imperial firing line.",
     cost: 10,
     hp: 9,
     move: 5,
@@ -38,7 +38,7 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
     range: 6,
     damage: 4,
     overwatchDamage: 2,
-    arc: 270,
+    arc: 180,
     meleeDamage: 3,
     meleeRange: 1.35,
     size: 1,
@@ -54,7 +54,7 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
     name: "Machine Gunner",
     role: "Suppression",
     description:
-      "Moves slowly. Long-range cannon that can rake several clustered enemies, but only through a 90° cone. Overwatch hits as hard as a aimed burst.",
+      "Moves slowly. Long-range cannon that can rake several clustered enemies, but only through a 60° cone. Overwatch hits as hard as a aimed burst.",
     cost: 20,
     hp: 11,
     move: 3,
@@ -62,7 +62,7 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
     range: 9,
     damage: 5,
     overwatchDamage: 5,
-    arc: 90,
+    arc: 60,
     meleeDamage: 3,
     meleeRange: 1.35,
     size: 1,
@@ -78,7 +78,7 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
     name: "Sniper",
     role: "Infiltration",
     description:
-      "Extra-long single shot through a 90° arc. Invisible unless an enemy closes in. Firing reveals them; one quiet turn and they vanish again.",
+      "Extra-long single shot through a 60° arc. Invisible unless an enemy closes in. Firing reveals them; one quiet turn and they vanish again.",
     cost: 20,
     hp: 7,
     move: 4,
@@ -86,7 +86,7 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
     range: 12,
     damage: 9,
     overwatchDamage: 3,
-    arc: 90,
+    arc: 60,
     meleeDamage: 2,
     meleeRange: 1.35,
     size: 1,
@@ -167,6 +167,11 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
     maxTargets: 1,
   },
 };
+
+export function sightRange(type: UnitType) {
+  const range = UNIT_STATS[type].range;
+  return range > 0 ? range + 1.25 : 6;
+}
 
 export const EMPIRE_UNITS: UnitType[] = ["captain", "soldier", "machine_gunner", "sniper"];
 export const BROOD_UNITS: UnitType[] = ["tyrant", "broodling", "spatling"];
