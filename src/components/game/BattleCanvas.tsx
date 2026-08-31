@@ -218,15 +218,17 @@ function Scene() {
 
   return (
     <>
-      <color attach="background" args={["#07080a"]} />
-      <fog attach="fog" args={["#07080a", 55, 120]} />
-      <hemisphereLight args={["#d4d8e0", "#2a2620", 0.95]} />
+      <color attach="background" args={["#101218"]} />
+      <fog attach="fog" args={["#101218", 62, 130]} />
+      <hemisphereLight args={["#c8ced6", "#4a463e", 0.7]} />
+      <ambientLight intensity={0.28} />
       <directionalLight
         position={[18, 28, 14]}
-        intensity={1.85}
+        intensity={1.12}
         castShadow
         shadow-mapSize={[1024, 1024]}
       />
+      <directionalLight position={[-14, 12, -10]} intensity={0.32} />
       <Ground
         map={battle.map}
         explored={battle.explored}

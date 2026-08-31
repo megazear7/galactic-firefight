@@ -88,12 +88,11 @@ export function UnitVisual({
         <sprite position={[0, height * 0.52, 0]} scale={[1.15 * stats.size, height, 1]}>
           <spriteMaterial
             map={tex}
-            color="#ffffff"
+            color="#f2f0ea"
             transparent
             opacity={opacity}
             depthWrite={false}
             alphaTest={0.12}
-            toneMapped={false}
           />
         </sprite>
       )}

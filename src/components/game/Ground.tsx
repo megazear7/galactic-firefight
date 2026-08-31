@@ -5,7 +5,6 @@ import type { BattleMap } from "@/game/types";
 import type { ThreeEvent } from "@react-three/fiber";
 
 const loader = new THREE.TextureLoader();
-loader.setCrossOrigin("anonymous");
 
 function useTileTexture(src: string, rx: number, ry: number) {
   return useMemo(() => {
@@ -18,7 +17,7 @@ function useTileTexture(src: string, rx: number, ry: number) {
   }, [src, rx, ry]);
 }
 
-const CELL = 64;
+const CELL = 48;
 const TEX = {
   plates: "/assets/ground/plates.jpg",
   grate: "/assets/ground/grate.jpg",
@@ -29,9 +28,8 @@ const TEX = {
 function loadImage(src: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = "anonymous";
     img.onload = () => resolve(img);
-    img.onerror = reject;
+    img.onerror = () => reject(new Error(src));
     img.src = src;
   });
 }
@@ -119,9 +117,11 @@ function paintGround(map: BattleMap, imgs: Record<string, HTMLImageElement>) {
     return false;
   };
 
-  fillPattern(ctx, imgs.plates, 0.42, 0, 0, 1);
-  fillPattern(ctx, imgs.grate, 0.5, 80, 40, 0.28);
-  fillPattern(ctx, imgs.plates, 0.22, 140, -60, 0.22);
+  ctx.fillStyle = "#8a8680";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  fillPattern(ctx, imgs.plates, 0.38, 0, 0, 1);
+  fillPattern(ctx, imgs.grate, 0.46, 80, 40, 0.22);
+  fillPattern(ctx, imgs.plates, 0.2, 140, -60, 0.16);
 
   const aislePath = new Path2D();
   const spinePath = new Path2D();
@@ -136,35 +136,35 @@ function paintGround(map: BattleMap, imgs: Record<string, HTMLImageElement>) {
         if (vAisles.has(c) || hAisles.has(r)) spinePath.rect(x, y, CELL, CELL);
       }
       const n = fbm(c * 0.19 + seed * 0.002, r * 0.19);
-      if (nearWall(c, r) || n > 0.58) rustPath.rect(x, y, CELL, CELL);
+      if (nearWall(c, r) || n > 0.62) rustPath.rect(x, y, CELL, CELL);
       if (n > 0.4 && n < 0.52) scuffPath.rect(x, y, CELL, CELL);
     }
   }
 
   ctx.save();
   ctx.clip(scuffPath);
-  fillPattern(ctx, imgs.grate, 0.38, 24, 90, 0.45);
+  fillPattern(ctx, imgs.grate, 0.36, 24, 90, 0.35);
   ctx.restore();
 
   ctx.save();
   ctx.clip(aislePath);
-  fillPattern(ctx, imgs.grate, 0.4, 0, 0, 1);
+  fillPattern(ctx, imgs.grate, 0.38, 0, 0, 0.92);
   ctx.restore();
 
   ctx.save();
   ctx.clip(spinePath);
-  fillPattern(ctx, imgs.hazard, 0.48, 0, 0, 0.55);
+  fillPattern(ctx, imgs.hazard, 0.44, 0, 0, 0.38);
   ctx.restore();
 
   ctx.save();
   ctx.clip(rustPath);
   ctx.globalCompositeOperation = "multiply";
-  fillPattern(ctx, imgs.rust, 0.36, 18, 40, 0.55);
+  fillPattern(ctx, imgs.rust, 0.34, 18, 40, 0.22);
   ctx.restore();
   ctx.globalCompositeOperation = "source-over";
 
-  ctx.strokeStyle = "rgba(8, 10, 12, 0.55)";
-  ctx.lineWidth = 3;
+  ctx.strokeStyle = "rgba(28, 30, 34, 0.35)";
+  ctx.lineWidth = 2;
   ctx.lineJoin = "round";
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
@@ -201,13 +201,14 @@ export function Ground({
   onRelease?: (col: number, row: number) => void;
 }) {
   const [ground, setGround] = useState<THREE.CanvasTexture | null>(null);
+  const plates = useTileTexture("/assets/ground/plates.jpg", map.cols / 7, map.rows / 7);
+  const crateTex = useTileTexture("/assets/ground/crate.jpg", 1, 1);
+  const bulkheadTex = useTileTexture("/assets/ground/bulkhead.jpg", 1, 1.2);
 
   useEffect(() => {
     let dead = false;
     let tex: THREE.CanvasTexture | null = null;
-    Promise.all(
-      Object.entries(TEX).map(([key, src]) => loadImage(src).then((img) => [key, img] as const)),
-    )
+    Promise.all(Object.entries(TEX).map(([key, src]) => loadImage(src).then((img) => [key, img] as const)))
       .then((entries) => {
         if (dead) return;
         const imgs = Object.fromEntries(entries) as Record<string, HTMLImageElement>;
@@ -220,21 +221,18 @@ export function Ground({
         setGround(tex);
       })
       .catch(() => {
-        /* keep fallback color */
+        setGround(null);
       });
     return () => {
       dead = true;
       tex?.dispose();
+      setGround(null);
     };
   }, [map.seed, map.cols, map.rows]);
 
   const w = map.cols * TILE;
   const h = map.rows * TILE;
   const pick = (e: ThreeEvent<PointerEvent>) => worldToPoint(e.point.x, e.point.z, map);
-
-  const crateTex = useTileTexture("/assets/ground/crate.jpg", 1, 1);
-  const bulkheadTex = useTileTexture("/assets/ground/bulkhead.jpg", 1, 1.35);
-  const rustTex = useTileTexture("/assets/ground/rust.jpg", 1.2, 1.2);
 
   return (
     <group>
@@ -265,16 +263,12 @@ export function Ground({
         }}
       >
         <planeGeometry args={[w + TILE, h + TILE]} />
-        {ground ? (
-          <meshStandardMaterial
-            map={ground}
-            color="#d4d0c8"
-            roughness={0.72}
-            metalness={0.42}
-          />
-        ) : (
-          <meshStandardMaterial color="#6a6762" roughness={0.92} metalness={0.28} />
-        )}
+        <meshStandardMaterial
+          map={ground ?? plates}
+          color="#c4c0b8"
+          roughness={0.82}
+          metalness={0.18}
+        />
       </mesh>
       {map.tiles.map((kind, i) => {
         if (kind === "floor") return null;
@@ -296,10 +290,9 @@ export function Ground({
             <boxGeometry args={[TILE * 0.92, tall ? 2.3 : 1.1, TILE * 0.92]} />
             <meshStandardMaterial
               map={tall ? bulkheadTex : crateTex}
-              roughnessMap={rustTex}
-              color={tall ? "#c8ccd2" : "#d2cec6"}
-              roughness={0.62}
-              metalness={0.38}
+              color="#d8d4cc"
+              roughness={0.72}
+              metalness={0.22}
             />
           </mesh>
         );
