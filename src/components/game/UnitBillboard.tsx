@@ -63,8 +63,8 @@ export function UnitVisual({
   });
 
   if (hidden) return null;
-  const tint = unit.faction === "empire" ? "#9a4444" : "#6a7544";
-  const opacity = dim ? 0.38 : unit.hp / unit.maxHp < 0.35 ? 0.85 : 1;
+  const tint = unit.faction === "empire" ? "#c45c5c" : "#8a9a52";
+  const opacity = dim ? 0.78 : unit.hp / unit.maxHp < 0.35 ? 0.9 : 1;
 
   return (
     <group ref={group} position={[x, 0, z]}>
@@ -88,10 +88,12 @@ export function UnitVisual({
         <sprite position={[0, height * 0.52, 0]} scale={[1.15 * stats.size, height, 1]}>
           <spriteMaterial
             map={tex}
+            color="#ffffff"
             transparent
             opacity={opacity}
             depthWrite={false}
             alphaTest={0.12}
+            toneMapped={false}
           />
         </sprite>
       )}

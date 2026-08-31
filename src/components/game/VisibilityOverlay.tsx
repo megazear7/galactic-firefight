@@ -2,7 +2,7 @@ import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import { tileToWorld } from "@/game/map";
 import { sightHorizon } from "@/game/combat";
-import { sightRange } from "@/game/units";
+import { sightRange, UNIT_STATS } from "@/game/units";
 import type { BattleMap, UnitState } from "@/game/types";
 
 const RAYS = 168;
@@ -16,7 +16,7 @@ export function VisibilityOverlay({
   map: BattleMap;
   units: UnitState[];
 }) {
-  const stamp = `${unit.id}:${unit.col.toFixed(2)},${unit.row.toFixed(2)}|${units
+  const stamp = `${unit.id}:${unit.col.toFixed(2)},${unit.row.toFixed(2)}:${unit.facing.toFixed(3)}|${units
     .filter((u) => u.alive)
     .map((u) => `${u.id}:${u.col.toFixed(1)},${u.row.toFixed(1)}`)
     .join(";")}`;
@@ -24,13 +24,15 @@ export function VisibilityOverlay({
   const geo = useMemo(() => {
     const horizon = sightHorizon(unit, map, units, sightRange(unit.type), RAYS);
     const origin = tileToWorld(unit.col, unit.row, map);
+    const wrap = UNIT_STATS[unit.type].arc >= 359;
     const n = horizon.length;
-    const pos = new Float32Array(n * 9);
-    const col = new Float32Array(n * 9);
+    const tris = wrap ? n : Math.max(0, n - 1);
+    const pos = new Float32Array(tris * 9);
+    const col = new Float32Array(tris * 9);
     const green = [0.435, 0.75, 0.478];
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; i < tris; i++) {
       const a = tileToWorld(horizon[i].col, horizon[i].row, map);
-      const nxt = horizon[(i + 1) % n];
+      const nxt = horizon[wrap ? (i + 1) % n : i + 1];
       const b = tileToWorld(nxt.col, nxt.row, map);
       const o = i * 9;
       pos[o] = origin.x;
@@ -42,23 +44,18 @@ export function VisibilityOverlay({
       pos[o + 6] = b.x;
       pos[o + 7] = 0.04;
       pos[o + 8] = b.z;
-      // origin brighter, rim more transparent via vertex color (material uses vertexColors)
-      col[o] = green[0];
-      col[o + 1] = green[1];
-      col[o + 2] = green[2];
-      col[o + 3] = green[0];
-      col[o + 4] = green[1];
-      col[o + 5] = green[2];
-      col[o + 6] = green[0];
-      col[o + 7] = green[1];
-      col[o + 8] = green[2];
+      for (let k = 0; k < 9; k += 3) {
+        col[o + k] = green[0];
+        col[o + k + 1] = green[1];
+        col[o + k + 2] = green[2];
+      }
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
     g.setAttribute("color", new THREE.BufferAttribute(col, 3));
     g.computeVertexNormals();
     return g;
-    // stamp captures pose + bodies
+    // stamp captures pose, facing, and bodies
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stamp, map, unit.type]);
 

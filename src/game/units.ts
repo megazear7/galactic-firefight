@@ -8,7 +8,7 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
     role: "Command",
     description:
       "Short-ranged pistol with a full 360° firing arc. Issued free with the task force; one extra can be commissioned.",
-    cost: 25,
+    cost: 38,
     hp: 14,
     move: 4,
     speed: 1,
@@ -31,7 +31,7 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
     name: "Soldier",
     role: "Line infantry",
     description: "Medium-ranged assault rifle and a 180° arc. The backbone of every imperial firing line.",
-    cost: 10,
+    cost: 15,
     hp: 9,
     move: 5,
     speed: 1,
@@ -55,7 +55,7 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
     role: "Suppression",
     description:
       "Moves slowly. Long-range cannon that can rake several clustered enemies, but only through a 60° cone. Overwatch hits as hard as a aimed burst.",
-    cost: 20,
+    cost: 30,
     hp: 11,
     move: 3,
     speed: 0.62,
@@ -79,7 +79,7 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
     role: "Infiltration",
     description:
       "Extra-long single shot through a 60° arc. Invisible unless an enemy closes in. Firing reveals them; one quiet turn and they vanish again.",
-    cost: 20,
+    cost: 30,
     hp: 7,
     move: 4,
     speed: 1,
@@ -103,7 +103,7 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
     role: "Apex",
     description:
       "A two-legged siege beast. Devastating claw, and a short bio-cannon that bursts around the target. Extremely tough.",
-    cost: 50,
+    cost: 75,
     hp: 28,
     move: 4,
     speed: 0.78,
@@ -126,7 +126,7 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
     name: "Broodling",
     role: "Swarm",
     description: "Fast, fragile, and armed only with scythe limbs. They close distance and tear.",
-    cost: 5,
+    cost: 8,
     hp: 5,
     move: 7,
     speed: 1.45,
@@ -149,7 +149,7 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
     name: "Spatling",
     role: "Spitter",
     description: "A medium-paced shooter. Spits a burning bio-round at rifle distance.",
-    cost: 8,
+    cost: 12,
     hp: 7,
     move: 5,
     speed: 1,
@@ -215,13 +215,13 @@ export function defaultLoadout(faction: Faction, points: PointScale): ArmyLoadou
   const leader = leaderType(faction);
   const free = freeLeaders(faction, points);
   if (faction === "empire") {
-    if (points === 100) return { [leader]: free, soldier: 4, machine_gunner: 1, sniper: 2 };
-    if (points === 200) return { [leader]: free, soldier: 8, machine_gunner: 2, sniper: 3 };
-    return { [leader]: free + 1, soldier: 10, machine_gunner: 3, sniper: 4 };
+    if (points === 100) return { [leader]: free, soldier: 2, machine_gunner: 1, sniper: 1 };
+    if (points === 200) return { [leader]: free, soldier: 5, machine_gunner: 2, sniper: 2 };
+    return { [leader]: free, soldier: 6, machine_gunner: 3, sniper: 4 };
   }
-  if (points === 100) return { [leader]: free, broodling: 8, spatling: 7 };
-  if (points === 200) return { [leader]: free, broodling: 14, spatling: 16 };
-  return { [leader]: free + 1, broodling: 18, spatling: 16 };
+  if (points === 100) return { [leader]: free, broodling: 6, spatling: 4 };
+  if (points === 200) return { [leader]: free, broodling: 10, spatling: 10 };
+  return { [leader]: free + 1, broodling: 10, spatling: 12 };
 }
 
 export function emptyLoadout(faction: Faction, points: PointScale): ArmyLoadout {

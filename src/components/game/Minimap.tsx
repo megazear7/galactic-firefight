@@ -83,12 +83,12 @@ export function Minimap() {
   if (!battle) return null;
 
   return (
-    <div className="pointer-events-auto overflow-hidden rounded-[var(--radius-md)] border border-border bg-bg-elevated/90 shadow-[var(--shadow-panel)] backdrop-blur-sm">
+    <div className="pointer-events-auto size-full overflow-hidden rounded-[var(--radius-md)] border border-border bg-bg-elevated/90 shadow-[var(--shadow-panel)] backdrop-blur-sm">
       <canvas
         ref={canvas}
         width={W}
         height={H}
-        className="block cursor-crosshair touch-none"
+        className="block size-full touch-none cursor-crosshair"
         onPointerDown={(e) => {
           e.preventDefault();
           (e.currentTarget as HTMLCanvasElement).setPointerCapture(e.pointerId);

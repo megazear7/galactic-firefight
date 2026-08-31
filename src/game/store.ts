@@ -37,6 +37,7 @@ import type {
   BattleState,
   Faction,
   GameRecord,
+  MapSize,
   PlayMode,
   PointScale,
   Settings,
@@ -54,6 +55,7 @@ type Store = {
   settingsOpen: boolean;
   mode: PlayMode;
   points: PointScale;
+  mapSize: MapSize;
   faction: Faction;
   army: ArmyLoadout;
   record: GameRecord | null;
@@ -73,6 +75,7 @@ type Store = {
   patchSettings: (p: Partial<Settings>) => void;
   startSetup: (mode: PlayMode) => void;
   setPoints: (p: PointScale) => void;
+  setMapSize: (s: MapSize) => void;
   setFaction: (f: Faction) => void;
   setArmy: (a: ArmyLoadout) => void;
   setInviteEmail: (v: string) => void;
@@ -107,6 +110,7 @@ function blankRecord(partial: Partial<GameRecord>): GameRecord {
     status: "setup",
     mode: "single",
     points: 100,
+    mapSize: "medium",
     playerFaction: "empire",
     seed: (Math.random() * 1e9) | 0,
     battle: null,
@@ -120,6 +124,7 @@ export const useGame = create<Store>((set, get) => ({
   settingsOpen: false,
   mode: "single",
   points: 100,
+  mapSize: "medium" as MapSize,
   faction: "empire",
   army: defaultLoadout("empire", 100),
   record: null,
@@ -160,6 +165,10 @@ export const useGame = create<Store>((set, get) => ({
     const faction = get().faction;
     set({ points, army: defaultLoadout(faction, points) });
   },
+  setMapSize: (mapSize) => {
+    sfx.ui();
+    set({ mapSize });
+  },
   setFaction: (faction) => {
     sfx.ui();
     set({ faction, army: defaultLoadout(faction, get().points) });
@@ -168,7 +177,7 @@ export const useGame = create<Store>((set, get) => ({
   setInviteEmail: (inviteEmail) => set({ inviteEmail }),
   beginBattle: (opts) => {
     unlockAudio(get().settings);
-    const { faction, army, points, mode, record } = get();
+    const { faction, army, points, mapSize, mode, record } = get();
     const enemyFaction: Faction = faction === "empire" ? "brood" : "empire";
     const enemyArmy = opts?.enemyArmy ?? defaultEnemyArmy(enemyFaction, points);
     const seed = record?.seed ?? ((Math.random() * 1e9) | 0);
@@ -180,12 +189,14 @@ export const useGame = create<Store>((set, get) => ({
       enemyArmy,
       mode,
       first,
+      mapSize: record?.mapSize ?? mapSize,
     });
     const rec =
       record ??
       blankRecord({
         mode,
         points,
+        mapSize,
         playerFaction: faction,
         seed,
         name: mode === "multi" ? "Linked firefight" : "Skirmish",
@@ -205,6 +216,7 @@ export const useGame = create<Store>((set, get) => ({
       battle: g.battle,
       mode: g.mode,
       points: g.points,
+      mapSize: g.mapSize ?? "medium",
       faction: g.playerFaction,
       army: g.playerFaction === "empire" || g.playerFaction === "brood" ? get().army : get().army,
       screen: g.battle ? "battle" : "army",
@@ -279,19 +291,23 @@ export const useGame = create<Store>((set, get) => ({
   melee: (targetId) => {
     const battle = get().battle;
     if (!battle) return;
+    const next = confirmMelee(battle, targetId);
+    if (next === battle) return;
     sfx.melee();
-    set({ battle: confirmMelee(battle, targetId), resolveTimer: 0.75 });
+    set({ battle: next, resolveTimer: 0.75 });
   },
   fireAt: (targetId) => {
     const battle = get().battle;
     if (!battle) return;
+    const next = confirmShoot(battle, targetId);
+    if (next === battle) return;
     const unit = battle.units.find((u) => u.id === battle.selectedId);
     if (unit?.faction === "brood") sfx.alien();
     else if (unit?.type === "sniper") sfx.sniper();
     else if (unit?.type === "machine_gunner") sfx.mg();
     else sfx.shot();
     const resolveTimer = unit?.type === "machine_gunner" ? 0.62 : 0.48;
-    set({ battle: confirmShoot(battle, targetId), resolveTimer });
+    set({ battle: next, resolveTimer });
   },
   end: () => {
     const battle = get().battle;
@@ -415,6 +431,7 @@ export async function publishLobby(
   client: UserDataClient,
   user: { id: string; name?: string; email?: string },
   points: PointScale,
+  mapSize: MapSize,
   email: string,
 ) {
   const id = newGameId();
@@ -425,6 +442,7 @@ export async function publishLobby(
     hostName: user.name ?? "Host",
     hostEmail: user.email,
     points,
+    mapSize,
     status: "waiting",
     updatedAt: new Date().toISOString(),
   };

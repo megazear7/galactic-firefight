@@ -1,8 +1,20 @@
-import type { BattleMap, TileKind } from "./types";
+import type { BattleMap, MapSize, TileKind } from "./types";
 
 export const TILE = 1.55;
 export const MAP_COLS = 32;
 export const MAP_ROWS = 24;
+
+export const MAP_DIMS: Record<MapSize, { cols: number; rows: number }> = {
+  small: { cols: 24, rows: 18 },
+  medium: { cols: 32, rows: 24 },
+  large: { cols: 44, rows: 32 },
+};
+
+export const MAP_SIZE_LABEL: Record<MapSize, string> = {
+  small: "Small",
+  medium: "Medium",
+  large: "Large",
+};
 
 export function mulberry32(seed: number) {
   let a = seed >>> 0;
@@ -94,11 +106,11 @@ export function dist(a: { col: number; row: number }, b: { col: number; row: num
   return Math.hypot(dx, dy);
 }
 
-export function generateMap(seed: number): BattleMap {
-  const cols = MAP_COLS;
-  const rows = MAP_ROWS;
+export function generateMap(seed: number, size: MapSize = "medium"): BattleMap {
+  const { cols, rows } = MAP_DIMS[size];
   const tiles: TileKind[] = Array.from({ length: cols * rows }, () => "floor");
   const rand = mulberry32(seed || 1);
+  const scale = (cols * rows) / (MAP_COLS * MAP_ROWS);
 
   const place = (c: number, r: number, kind: TileKind) => {
     if (c < 3 || c >= cols - 3) return;
@@ -106,7 +118,7 @@ export function generateMap(seed: number): BattleMap {
     tiles[idx(c, r, cols)] = kind;
   };
 
-  const clusters = 16 + Math.floor(rand() * 8);
+  const clusters = Math.max(6, Math.round((16 + Math.floor(rand() * 8)) * scale));
   for (let i = 0; i < clusters; i++) {
     const w = 1 + Math.floor(rand() * 4);
     const h = 1 + Math.floor(rand() * 3);
@@ -120,8 +132,9 @@ export function generateMap(seed: number): BattleMap {
     }
   }
 
-  for (let i = 0; i < 22; i++) {
-    const c = 4 + Math.floor(rand() * (cols - 8));
+  const extras = Math.max(8, Math.round(22 * scale));
+  for (let i = 0; i < extras; i++) {
+    const c = 4 + Math.floor(rand() * Math.max(1, cols - 8));
     const r = Math.floor(rand() * rows);
     place(c, r, "wall");
   }

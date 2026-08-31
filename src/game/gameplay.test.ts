@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   hasLos,
+  inArc,
   pickOverwatch,
+  sightHorizon,
 } from "./combat.ts";
-import { createBattle, selectUnit, setActMode, turnExhausted, waitUnit, activationsDone, activationsCap } from "./battle.ts";
+import { createBattle, confirmShoot, selectUnit, setActMode, turnExhausted, waitUnit, activationsDone, activationsCap } from "./battle.ts";
 import { UNIT_STATS } from "./units.ts";
 import { findPath, pathCost, blockedAt } from "./pathfinding.ts";
-import { circleHitsTerrain } from "./map.ts";
+import { circleHitsTerrain, dist, generateMap, MAP_DIMS } from "./map.ts";
 import type { BattleMap, UnitState } from "./types.ts";
 
 function floorMap(cols = 8, rows = 8): BattleMap {
@@ -180,6 +182,33 @@ describe("firing arcs", () => {
     assert.equal(UNIT_STATS.sniper.arc, 60);
     assert.equal(UNIT_STATS.machine_gunner.arc, 60);
   });
+
+  it("clips the sight overlay to the unit firing arc", () => {
+    const map = floorMap(20, 20);
+    const sniper = unit({ id: "s", type: "sniper", col: 10, row: 10, facing: 0 });
+    const pts = sightHorizon(sniper, map, [sniper], 12, 48);
+    assert.ok(pts.length >= 8);
+    for (const p of pts) {
+      if (dist(sniper, p) < 0.25) continue;
+      assert.equal(inArc(sniper, p), true, `ray ${p.col.toFixed(2)},${p.row.toFixed(2)} outside 60° arc`);
+    }
+  });
+});
+
+describe("map size", () => {
+  it("builds small, medium, and large fields", () => {
+    const small = generateMap(4, "small");
+    const medium = generateMap(4, "medium");
+    const large = generateMap(4, "large");
+    assert.equal(small.cols, MAP_DIMS.small.cols);
+    assert.equal(small.rows, MAP_DIMS.small.rows);
+    assert.equal(medium.cols, 32);
+    assert.equal(medium.rows, 24);
+    assert.equal(large.cols, MAP_DIMS.large.cols);
+    assert.equal(large.rows, MAP_DIMS.large.rows);
+    assert.equal(small.tiles.length, small.cols * small.rows);
+    assert.equal(large.tiles.length, large.cols * large.rows);
+  });
 });
 
 describe("fire/move toggle", () => {
@@ -205,6 +234,26 @@ describe("fire/move toggle", () => {
     state = setActMode(state, "move");
     assert.equal(state.phase, "aimMove");
     assert.equal(state.actMode, "move");
+  });
+
+  it("does not fire when it is not the player's turn", () => {
+    let state = createBattle({
+      seed: 5,
+      playerFaction: "empire",
+      playerArmy: { captain: 1, soldier: 2 },
+      enemyArmy: { tyrant: 1, spatling: 3, broodling: 2 },
+      mode: "single",
+      first: "brood",
+    });
+    assert.equal(state.phase, "enemyTurn");
+    const shooter = state.units.find((x) => x.alive && x.faction === "brood" && UNIT_STATS[x.type].range > 0);
+    const victim = state.units.find((x) => x.alive && x.faction === "empire");
+    assert.ok(shooter && victim);
+    state = { ...state, selectedId: shooter.id, actMode: "fire" };
+    const next = confirmShoot(state, victim.id);
+    assert.equal(next, state);
+    assert.equal(next.phase, "enemyTurn");
+    assert.equal(victim.hp, state.units.find((x) => x.id === victim.id)?.hp);
   });
 });
 

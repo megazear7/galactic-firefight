@@ -10,7 +10,7 @@ import { MoveOverlay } from "./MoveOverlay";
 import { VisibilityOverlay } from "./VisibilityOverlay";
 import { CombatFx } from "./CombatFx";
 import { FogOfWar } from "./FogOfWar";
-import { readyUnits } from "@/game/battle";
+import { readyUnits, canControl } from "@/game/battle";
 import { enemyVisible, visionMask } from "@/game/vision";
 import type { MapControls as MapControlsImpl } from "three-stdlib";
 
@@ -168,8 +168,34 @@ function Scene() {
   const select = useGame((s) => s.select);
   const clickTile = useGame((s) => s.clickTile);
   const hoverTile = useGame((s) => s.hoverTile);
-  const confirmFacing = useGame((s) => s.confirmFacing);
   const fireAt = useGame((s) => s.fireAt);
+  const moveDrag = useRef<{
+    startCol: number;
+    startRow: number;
+    from: "aimMove" | "aimFacing";
+    dragged: boolean;
+    armed: boolean;
+  } | null>(null);
+
+  const finishMoveDrag = () => {
+    const drag = moveDrag.current;
+    if (!drag?.armed) return;
+    drag.armed = false;
+    moveDrag.current = null;
+    const b = useGame.getState().battle;
+    if (!b || b.phase !== "aimFacing") return;
+    if (drag.dragged || drag.from === "aimFacing") useGame.getState().confirmFacing();
+  };
+
+  useEffect(() => {
+    const up = () => finishMoveDrag();
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    return () => {
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+  }, []);
 
   const visKey = battle
     ? battle.units.map((u) => `${u.id}:${u.alive ? 1 : 0}:${u.col.toFixed(2)},${u.row.toFixed(2)}`).join("|")
@@ -185,32 +211,34 @@ function Scene() {
   const ready = new Set(readyUnits(battle).map((u) => u.id));
   const showVis =
     selected &&
+    selected.faction === battle.playerFaction &&
     battle.phase !== "moving" &&
     battle.phase !== "resolving" &&
-    battle.phase !== "gameOver" &&
-    selected.faction === battle.turn;
+    battle.phase !== "gameOver";
 
   return (
     <>
       <color attach="background" args={["#07080a"]} />
       <fog attach="fog" args={["#07080a", 55, 120]} />
-      <hemisphereLight args={["#b8c0cc", "#1a1814", 0.55]} />
+      <hemisphereLight args={["#d4d8e0", "#2a2620", 0.95]} />
       <directionalLight
         position={[18, 28, 14]}
-        intensity={1.35}
+        intensity={1.85}
         castShadow
         shadow-mapSize={[1024, 1024]}
       />
       <Ground
         map={battle.map}
         explored={battle.explored}
-        onHover={hoverTile}
+        onHover={(col, row) => {
+          hoverTile(col, row);
+          const drag = moveDrag.current;
+          if (!drag || col == null || row == null) return;
+          if (Math.hypot(col - drag.startCol, row - drag.startRow) > 0.22) drag.dragged = true;
+        }}
+        onRelease={() => finishMoveDrag()}
         onPoint={(col, row) => {
-          if (battle.phase === "aimFacing") {
-            clickTile(col, row);
-            confirmFacing();
-            return;
-          }
+          if (!canControl(battle)) return;
           if (battle.phase === "aimShoot" || battle.actMode === "fire") {
             const t = nearestUnit(
               col,
@@ -231,12 +259,41 @@ function Scene() {
             clickTile(col, row);
             return;
           }
-          if (occupant && battle.phase !== "aimMove") {
+          if (occupant && battle.phase !== "aimMove" && battle.phase !== "aimFacing") {
             select(occupant.id);
             return;
           }
-          if (occupant && occupant.faction === battle.playerFaction && occupant.id !== selected?.id) {
+          if (
+            occupant &&
+            occupant.faction === battle.playerFaction &&
+            occupant.id !== selected?.id &&
+            battle.phase !== "aimFacing"
+          ) {
             select(occupant.id);
+            return;
+          }
+          if (battle.phase === "aimMove") {
+            clickTile(col, row);
+            if (useGame.getState().battle?.phase === "aimFacing") {
+              moveDrag.current = {
+                startCol: col,
+                startRow: row,
+                from: "aimMove",
+                dragged: false,
+                armed: true,
+              };
+            }
+            return;
+          }
+          if (battle.phase === "aimFacing") {
+            clickTile(col, row);
+            moveDrag.current = {
+              startCol: col,
+              startRow: row,
+              from: "aimFacing",
+              dragged: false,
+              armed: true,
+            };
             return;
           }
           clickTile(col, row);
@@ -255,6 +312,7 @@ function Scene() {
             onClick={(e) => {
               e.stopPropagation();
               if (hidden) return;
+              if (!canControl(battle)) return;
               if (
                 (battle.phase === "aimShoot" || battle.actMode === "fire") &&
                 selected &&
@@ -270,7 +328,7 @@ function Scene() {
               unit={u}
               map={battle.map}
               graphics={settings.graphics}
-              selected={u.id === battle.selectedId}
+              selected={u.id === battle.selectedId && u.faction === battle.playerFaction}
               ready={ready.has(u.id) && battle.turn === battle.playerFaction}
               hidden={hidden}
               dim={u.faction !== battle.turn}
@@ -278,7 +336,9 @@ function Scene() {
           </group>
         );
       })}
-      {selected && <MoveOverlay battle={battle} unit={selected} />}
+      {selected && selected.faction === battle.playerFaction && (
+        <MoveOverlay battle={battle} unit={selected} />
+      )}
       <CombatFx events={battle.fx ?? []} />
       <CameraRig />
       <Loop />

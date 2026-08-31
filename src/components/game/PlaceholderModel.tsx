@@ -4,13 +4,13 @@ import type { UnitType } from "@/game/types";
 export const MODEL_URLS: Partial<Record<UnitType, string>> = {};
 
 const COLOR: Record<UnitType, string> = {
-  captain: "#8d8f96",
-  soldier: "#6e737c",
-  machine_gunner: "#5c616a",
-  sniper: "#4a4e56",
-  tyrant: "#5a6238",
-  broodling: "#6a7344",
-  spatling: "#4e5534",
+  captain: "#c8cad0",
+  soldier: "#a8adb6",
+  machine_gunner: "#9aa0aa",
+  sniper: "#8b9098",
+  tyrant: "#8a9458",
+  broodling: "#9aa866",
+  spatling: "#7a8550",
 };
 
 export function PlaceholderModel({ type, factionTint }: { type: UnitType; factionTint: string }) {
@@ -20,11 +20,11 @@ export function PlaceholderModel({ type, factionTint }: { type: UnitType; factio
       <group>
         <mesh position={[0, 0.45, 0.18]} castShadow>
           <capsuleGeometry args={[0.18, 0.55, 4, 8]} />
-          <meshStandardMaterial color={c} metalness={0.1} roughness={0.7} />
+          <meshStandardMaterial color={c} metalness={0.1} roughness={0.55} emissive={c} emissiveIntensity={0.12} />
         </mesh>
         <mesh position={[0, 0.45, -0.18]} castShadow>
           <capsuleGeometry args={[0.18, 0.55, 4, 8]} />
-          <meshStandardMaterial color={c} metalness={0.1} roughness={0.7} />
+          <meshStandardMaterial color={c} metalness={0.1} roughness={0.55} emissive={c} emissiveIntensity={0.12} />
         </mesh>
         <mesh position={[0, 1.15, 0]} castShadow>
           <sphereGeometry args={[0.42, 12, 10]} />

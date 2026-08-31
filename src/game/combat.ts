@@ -85,10 +85,16 @@ export function sightHorizon(
   rays = 160,
 ): PathPoint[] {
   const skip = new Set([unit.id]);
+  const stats = UNIT_STATS[unit.type];
+  const full = stats.arc >= 359;
+  const half = ((stats.arc * Math.PI) / 180) / 2;
+  const count = full ? rays : Math.max(16, Math.round(rays * (stats.arc / 360)));
   const pts: PathPoint[] = [];
   const steps = Math.max(10, Math.ceil(maxRange * 12));
-  for (let i = 0; i < rays; i++) {
-    const a = (i / rays) * Math.PI * 2;
+  for (let i = 0; i < count; i++) {
+    const a = full
+      ? (i / count) * Math.PI * 2
+      : unit.facing - half + (count === 1 ? 0 : (i / (count - 1)) * half * 2);
     const dx = Math.cos(a);
     const dy = Math.sin(a);
     let last: PathPoint = { col: unit.col, row: unit.row };

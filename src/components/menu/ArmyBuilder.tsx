@@ -20,6 +20,7 @@ import { useState } from "react";
 export function ArmyBuilder() {
   const faction = useGame((s) => s.faction);
   const points = useGame((s) => s.points);
+  const mapSize = useGame((s) => s.mapSize);
   const army = useGame((s) => s.army);
   const setArmy = useGame((s) => s.setArmy);
   const setScreen = useGame((s) => s.setScreen);
@@ -52,7 +53,7 @@ export function ArmyBuilder() {
     if (!identity.client || !identity.user) return;
     setBusy(true);
     try {
-      const lobby = await publishLobby(identity.client, identity.user, points, inviteEmail);
+      const lobby = await publishLobby(identity.client, identity.user, points, mapSize, inviteEmail);
       if (inviteEmail) {
         await grantGuestAcl(identity.client, identity.user.id, lobby.id, { email: inviteEmail });
       }
@@ -65,6 +66,7 @@ export function ArmyBuilder() {
         status: "setup" as const,
         mode: "multi" as const,
         points,
+        mapSize,
         playerFaction: faction,
         hostId: identity.user.id,
         hostEmail: identity.user.email,

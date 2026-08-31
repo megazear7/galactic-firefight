@@ -23,6 +23,7 @@ export function JoinScreen() {
   const army = useGame((s) => s.army);
   const points = useGame((s) => s.points);
   const setPoints = useGame((s) => s.setPoints);
+  const setMapSize = useGame((s) => s.setMapSize);
   const setArmy = useGame((s) => s.setArmy);
   const setScreen = useGame((s) => s.setScreen);
   const [lobby, setLobby] = useState<MpLobby | null>(null);
@@ -35,13 +36,14 @@ export function JoinScreen() {
       setLobby(l);
       if (l) {
         setPoints(l.points);
+        if (l.mapSize) setMapSize(l.mapSize);
         const taken = l.hostFaction;
         const pick: Faction = taken === "empire" ? "brood" : taken === "brood" ? "empire" : "brood";
         setFaction(pick);
         setArmy(defaultLoadout(pick, l.points));
       }
     });
-  }, [identity.client, hostId, gameId, setArmy, setFaction, setPoints]);
+  }, [identity.client, hostId, gameId, setArmy, setFaction, setPoints, setMapSize]);
 
   async function join() {
     if (!identity.client || !identity.user || !hostId || !gameId) return;
@@ -63,6 +65,7 @@ export function JoinScreen() {
         enemyArmy: existing.hostArmy ?? defaultEnemyArmy(hostFaction, existing.points),
         mode: "multi",
         first,
+        mapSize: existing.mapSize ?? lobby?.mapSize ?? "medium",
       });
       battle.playerFaction = guestFaction;
       const next = {

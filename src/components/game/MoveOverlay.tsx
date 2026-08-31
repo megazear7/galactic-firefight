@@ -49,6 +49,7 @@ function ArcLines({
   range: number;
   color: string;
 }) {
+  if (arc >= 359) return null;
   const half = ((arc * Math.PI) / 180) / 2;
   const pts: Array<[number, number, number]> = [[0, 0.07, 0]];
   const steps = 16;

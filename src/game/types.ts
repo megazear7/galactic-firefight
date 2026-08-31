@@ -12,6 +12,7 @@ export type UnitType =
   | "spatling";
 
 export type PointScale = 100 | 200 | 300;
+export type MapSize = "small" | "medium" | "large";
 export type GraphicsMode = "sprites" | "models";
 export type PlayMode = "single" | "multi";
 
@@ -153,6 +154,7 @@ export type GameRecord = {
   status: "setup" | "active" | "victory" | "defeat";
   mode: PlayMode;
   points: PointScale;
+  mapSize: MapSize;
   playerFaction: Faction;
   hostId?: string;
   guestId?: string;

@@ -3,15 +3,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useGame } from "@/game/store";
 import { FACTION_BLURB, FACTION_NAME } from "@/game/units";
+import { MAP_SIZE_LABEL } from "@/game/map";
 import { cn } from "@/lib/utils";
-import type { Faction, PointScale } from "@/game/types";
+import type { Faction, MapSize, PointScale } from "@/game/types";
 import { useIdentity } from "@/lib/identity/provider";
 
 export function SetupScreen() {
   const mode = useGame((s) => s.mode);
   const points = useGame((s) => s.points);
+  const mapSize = useGame((s) => s.mapSize);
   const faction = useGame((s) => s.faction);
   const setPoints = useGame((s) => s.setPoints);
+  const setMapSize = useGame((s) => s.setMapSize);
   const setFaction = useGame((s) => s.setFaction);
   const setScreen = useGame((s) => s.setScreen);
   const inviteEmail = useGame((s) => s.inviteEmail);
@@ -39,7 +42,29 @@ export function SetupScreen() {
               )}
             >
               {p}
-              <span className="block text-[10px] font-sans uppercase tracking-wider text-subtle">points</span>
+              <span className="block text-xs font-sans uppercase tracking-wider text-subtle">points</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section>
+        <Label>Field size</Label>
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          {(["small", "medium", "large"] as MapSize[]).map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setMapSize(s)}
+              className={cn(
+                "h-14 rounded-[var(--radius-md)] border font-display text-xl",
+                mapSize === s ? "border-accent bg-surface-2" : "border-border bg-surface",
+              )}
+            >
+              {MAP_SIZE_LABEL[s]}
+              <span className="block text-xs font-sans uppercase tracking-wider text-subtle">
+                {s === "small" ? "24×18" : s === "medium" ? "32×24" : "44×32"}
+              </span>
             </button>
           ))}
         </div>

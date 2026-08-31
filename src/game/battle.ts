@@ -17,6 +17,7 @@ import type {
   Faction,
   FxEvent,
   LogLine,
+  MapSize,
   PlayMode,
   PointScale,
   UnitState,
@@ -235,8 +236,9 @@ export function createBattle(opts: {
   enemyArmy: ArmyLoadout;
   mode: PlayMode;
   first: Faction;
+  mapSize?: MapSize;
 }): BattleState {
-  const map = generateMap(opts.seed);
+  const map = generateMap(opts.seed, opts.mapSize ?? "medium");
   const enemyFaction: Faction = opts.playerFaction === "empire" ? "brood" : "empire";
   const taken = new Set<string>();
   const playerUnits = placeArmy(
@@ -282,13 +284,13 @@ export function createBattle(opts: {
 
 export function defaultEnemyArmy(faction: Faction, points: PointScale): ArmyLoadout {
   if (faction === "empire") {
-    if (points === 100) return { captain: 1, soldier: 5, machine_gunner: 1, sniper: 1 };
-    if (points === 200) return { captain: 2, soldier: 8, machine_gunner: 2, sniper: 2 };
-    return { captain: 3, soldier: 10, machine_gunner: 3, sniper: 3 };
+    if (points === 100) return { captain: 1, soldier: 2, machine_gunner: 1, sniper: 1 };
+    if (points === 200) return { captain: 2, soldier: 5, machine_gunner: 2, sniper: 2 };
+    return { captain: 3, soldier: 6, machine_gunner: 3, sniper: 3 };
   }
-  if (points === 100) return { tyrant: 1, broodling: 10, spatling: 6 };
-  if (points === 200) return { tyrant: 1, broodling: 16, spatling: 15 };
-  return { tyrant: 2, broodling: 20, spatling: 14 };
+  if (points === 100) return { tyrant: 1, broodling: 6, spatling: 4 };
+  if (points === 200) return { tyrant: 1, broodling: 10, spatling: 10 };
+  return { tyrant: 2, broodling: 10, spatling: 12 };
 }
 
 function living(state: BattleState, faction: Faction) {
@@ -609,9 +611,13 @@ export function beginShoot(state: BattleState): BattleState {
 }
 
 export function confirmShoot(state: BattleState, targetId: string): BattleState {
+  if (!canControl(state)) return state;
   const unit = unitById(state, state.selectedId);
   const target = unitById(state, targetId);
-  if (!unit || !target) return state;
+  if (!unit || !target || !unit.alive || !target.alive) return state;
+  if (unit.faction !== state.turn) return state;
+  if (unit.faction === target.faction) return state;
+  if (unit.acted) return state;
   const ids = shotVictims(unit, target, state.units, state.map);
   const victims = ids.map((id) => unitById(state, id)).filter((u): u is UnitState => !!u);
   return {
@@ -623,9 +629,10 @@ export function confirmShoot(state: BattleState, targetId: string): BattleState 
 }
 
 export function confirmMelee(state: BattleState, targetId: string): BattleState {
+  if (!canControl(state)) return state;
   const unit = unitById(state, state.selectedId);
   const target = unitById(state, targetId);
-  if (!unit || !target) return state;
+  if (!unit || !target || unit.faction !== state.turn || unit.faction === target.faction) return state;
   return {
     ...state,
     phase: "resolving",

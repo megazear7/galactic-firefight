@@ -52,6 +52,7 @@ function migrateGame(raw: GameRecord): GameRecord {
     status: raw.status === "victory" || raw.status === "defeat" || raw.status === "setup" ? raw.status : "active",
     mode: raw.mode === "multi" ? "multi" : "single",
     points: raw.points === 200 || raw.points === 300 ? raw.points : 100,
+    mapSize: raw.mapSize === "small" || raw.mapSize === "large" ? raw.mapSize : "medium",
     playerFaction: raw.playerFaction === "brood" ? "brood" : "empire",
     hostId: raw.hostId,
     guestId: raw.guestId,
@@ -194,6 +195,7 @@ export type MpLobby = {
   guestEmail?: string;
   guestName?: string;
   points: 100 | 200 | 300;
+  mapSize?: "small" | "medium" | "large";
   status: "waiting" | "setup" | "battle" | "done";
   hostFaction?: "empire" | "brood";
   guestFaction?: "empire" | "brood";
