@@ -5,6 +5,9 @@ import { allModelUrls } from "./models";
 const IMAGE_URLS = [
   ...Object.values(SPRITE_SRC),
   "/assets/menu-bg.jpg",
+  "/assets/codex-bg.jpg",
+  "/assets/empire-bg.jpg",
+  "/assets/brood-bg.jpg",
   "/assets/ground/plates.jpg",
   "/assets/ground/grate.jpg",
   "/assets/ground/rust.jpg",

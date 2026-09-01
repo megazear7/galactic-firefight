@@ -7,7 +7,7 @@ import {
   sightHorizon,
 } from "./combat.ts";
 import { createBattle, confirmShoot, selectUnit, deselectUnit, setActMode, chooseDestination, confirmMove, stepMove, turnExhausted, waitUnit, activationsDone, activationsCap, beginHotseat, endTurn, canControl } from "./battle.ts";
-import { UNIT_STATS } from "./units.ts";
+import { UNIT_STATS, isFaction, unitSpecials } from "./units.ts";
 import { MAP_SLOT_CAP } from "./types.ts";
 import { findPath, pathCost, blockedAt } from "./pathfinding.ts";
 import { circleHitsTerrain, dist, generateMap, idx, MAP_DIMS } from "./map.ts";
@@ -505,6 +505,17 @@ describe("activations", () => {
     assert.equal(state.turn, "brood");
     assert.equal(turnExhausted(state), false);
     assert.equal(activationsDone(state, 1), 0);
+  });
+});
+
+describe("force codex", () => {
+  it("lists faction slugs and unit specials", () => {
+    assert.equal(isFaction("empire"), true);
+    assert.equal(isFaction("brood"), true);
+    assert.equal(isFaction("pirates"), false);
+    assert.ok(unitSpecials(UNIT_STATS.sniper).some((s) => s.startsWith("Stealth")));
+    assert.ok(unitSpecials(UNIT_STATS.broodling).includes("Melee only"));
+    assert.ok(unitSpecials(UNIT_STATS.tyrant).some((s) => s.startsWith("Burst")));
   });
 });
 

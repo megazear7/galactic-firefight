@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Settings, User } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { useGame } from "@/game/store";
 import { listGames } from "@/game/persistence";
@@ -76,6 +77,9 @@ export function MainMenu() {
             </Button>
             <Button size="lg" variant="secondary" onClick={() => setScreen("browse")}>
               Browse games
+            </Button>
+            <Button size="lg" variant="outline" asChild>
+              <Link to="/forces">Force Codex</Link>
             </Button>
             <Button
               size="lg"

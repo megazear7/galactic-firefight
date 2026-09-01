@@ -16,7 +16,7 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
     damage: 7,
     overwatchDamage: 3,
     arc: 360,
-    meleeDamage: 4,
+    meleeDamage: 5,
     meleeRange: 1.35,
     size: 1,
     stealth: false,
@@ -33,13 +33,13 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
     description: "Medium-ranged assault rifle and a 180° arc. The backbone of every imperial firing line.",
     cost: 15,
     hp: 9,
-    move: 5,
+    move: 4,
     speed: 1,
     range: 6,
     damage: 4,
     overwatchDamage: 2,
     arc: 180,
-    meleeDamage: 3,
+    meleeDamage: 2,
     meleeRange: 1.35,
     size: 1,
     stealth: false,
@@ -251,3 +251,39 @@ export const FACTION_BLURB: Record<Faction, string> = {
   empire: "Disciplined steel and fire. Captains, rifles, suppression, and vanishing marksmen.",
   brood: "A living tide. A tyrant at the core, broodlings in the teeth, spatlings in the dark.",
 };
+
+export const FACTION_MOTTO: Record<Faction, string> = {
+  empire: "Five activations. No wasted shot.",
+  brood: "Close the distance. Unmake the line.",
+};
+
+export const FACTION_LORE: Record<Faction, string> = {
+  empire:
+    "The Galactic Empire does not hold a ruin with bodies. It holds it with doctrine. A captain keeps the pocket honest, soldiers stitch a firing line, machine gunners pin anything that clusters, and snipers unmake a leader from a street away — then vanish until the next quiet turn. Every activation is spent like ammunition: counted, aimed, and never offered twice.",
+  brood:
+    "The Brood Swarm is weather with teeth. It does not garrison. It arrives. A tyrant is the hinge — claw for the close work, a bio-cannon that bursts around whatever it hates. Broodlings sprint the last meters and tear. Spatlings spit burning rounds at rifle distance so the tide can close. There is no rear rank. There is only the next thing that still moves.",
+};
+
+export const FACTION_DOCTRINE: Record<Faction, string> = {
+  empire:
+    "Short pistol fire in a full circle. Rifles through a 180° front. Suppression in a 60° cone. One long shot from a ghost. Overwatch punishes the walk between cover.",
+  brood:
+    "The tyrant breaks the hinge. Broodlings own the last tile. Spatlings keep the line honest while the swarm closes. Melee is not a fallback. It is the plan.",
+};
+
+export const FACTIONS: Faction[] = ["empire", "brood"];
+
+export function isFaction(value: string): value is Faction {
+  return value === "empire" || value === "brood";
+}
+
+export function unitSpecials(stats: UnitStats): string[] {
+  const out: string[] = [];
+  if (stats.range <= 0) out.push("Melee only");
+  if (stats.arc >= 359) out.push("360° firing arc");
+  if (stats.stealth) out.push(`Stealth — revealed within ${stats.stealthRevealRange} or after firing`);
+  if (stats.aoeRadius > 0) out.push(`Burst ${stats.aoeRadius} around the impact`);
+  if (stats.maxTargets > 1) out.push(`Up to ${stats.maxTargets} targets`);
+  if (stats.multiTargetRadius > 0) out.push(`Rakes a ${stats.multiTargetRadius} cluster`);
+  return out;
+}
