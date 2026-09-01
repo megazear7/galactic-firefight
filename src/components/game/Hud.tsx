@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { actOptions, useGame } from "@/game/store";
 import { UNIT_STATS, FACTION_NAME, SPRITE_SRC } from "@/game/units";
 import { activationsCap, activationsDone, localParticipant, whyImmobile } from "@/game/battle";
+import { colorHex } from "@/game/lobby";
 import { Minimap } from "./Minimap";
 import { cn } from "@/lib/utils";
 import type { BattleState, UnitState, UnitStats } from "@/game/types";
@@ -141,19 +142,40 @@ export function Hud() {
   const battle = useGame((s) => s.battle);
   const settingsOpen = useGame((s) => s.setSettingsOpen);
   const end = useGame((s) => s.end);
+  const startHotseat = useGame((s) => s.startHotseat);
   const setScreen = useGame((s) => s.setScreen);
   if (!battle) return null;
 
   const selected = battle.units.find((u) => u.id === battle.selectedId) ?? null;
   const stats = selected ? UNIT_STATS[selected.type] : null;
   const me = localParticipant(battle);
-  const yours = Boolean(me && battle.turnTeam === me.team);
+  const hold = battle.hotseatPending;
+  const yours = Boolean(me && battle.turnTeam === me.team && !hold);
   const over = battle.phase === "gameOver";
   const used = activationsDone(battle);
   const cap = activationsCap(battle);
   const showCard = Boolean(
     selected && stats && !over && selected.playerId === battle.playerId,
   );
+
+  if (hold) {
+    return (
+      <div className="pointer-events-auto absolute inset-0 z-30 flex items-center justify-center bg-bg/95 p-6 backdrop-blur-md">
+        <div className="w-full max-w-sm rounded-[var(--radius-xl)] border border-border bg-surface p-6 text-center shadow-[var(--shadow-panel)]">
+          <div
+            className="mx-auto mb-4 size-10 rounded-full border-2 border-fg"
+            style={{ background: colorHex(hold.color) }}
+          />
+          <p className="text-xs uppercase tracking-[0.28em] text-muted">Pass the device</p>
+          <h2 className="mt-2 font-display text-4xl font-semibold">{hold.name}</h2>
+          <p className="mt-3 text-sm text-muted">Start your turn when the previous commander has looked away.</p>
+          <Button className="mt-6 w-full" onClick={startHotseat}>
+            Start turn
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="pointer-events-none absolute inset-0 flex flex-col">

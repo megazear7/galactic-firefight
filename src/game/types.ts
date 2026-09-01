@@ -15,7 +15,7 @@ export type PointScale = 100 | 200 | 300;
 export type MapSize = "small" | "medium" | "large";
 export type GraphicsMode = "sprites" | "models";
 export type PlayMode = "single" | "multi";
-export type SlotKind = "human" | "ai" | "open" | "invite";
+export type SlotKind = "human" | "local" | "ai" | "open" | "invite";
 export type GameVisibility = "public" | "private";
 export type ArmyLoadout = Partial<Record<UnitType, number>>;
 
@@ -198,6 +198,7 @@ export type BattleState = {
   fx: FxEvent[];
   explored: boolean[];
   actMode: ActMode;
+  hotseatPending: { playerId: string; name: string; color: number } | null;
 };
 
 export type GameRecord = {

@@ -2,6 +2,7 @@ import { circleHitsTerrain, dist, idx, isBlocked } from "./map";
 import { hasLos } from "./combat";
 import { sightRange } from "./units";
 import type { BattleMap, BattleState, UnitState } from "./types";
+import { devicePlayers } from "./lobby";
 
 export { sightRange };
 
@@ -27,7 +28,12 @@ function canSeeTile(unit: UnitState, map: BattleMap, units: UnitState[], col: nu
 export function visionMask(state: BattleState, team: number): boolean[] {
   const { map, units } = state;
   const vis = emptyMask(map);
-  const viewers = units.filter((u) => u.alive && u.team === team);
+  const hotseat = devicePlayers(state.participants ?? []).length >= 2;
+  const viewers = units.filter((u) => {
+    if (!u.alive) return false;
+    if (hotseat) return u.playerId === state.playerId;
+    return u.team === team;
+  });
   for (const unit of viewers) {
     const cap = sightRange(unit.type);
     const reach = cap + 0.6;
@@ -68,6 +74,10 @@ export function localTeam(state: BattleState) {
 }
 
 export function enemyVisible(state: BattleState, unit: UnitState, vis: boolean[]) {
+  if (devicePlayers(state.participants ?? []).length >= 2) {
+    if (unit.playerId === state.playerId) return true;
+    return tileVisibleNow(vis, state.map, unit.col, unit.row);
+  }
   if (unit.team === localTeam(state)) return true;
   return tileVisibleNow(vis, state.map, unit.col, unit.row);
 }

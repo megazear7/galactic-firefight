@@ -6,7 +6,7 @@ import {
   pickOverwatch,
   sightHorizon,
 } from "./combat.ts";
-import { createBattle, confirmShoot, selectUnit, setActMode, turnExhausted, waitUnit, activationsDone, activationsCap } from "./battle.ts";
+import { createBattle, confirmShoot, selectUnit, setActMode, turnExhausted, waitUnit, activationsDone, activationsCap, beginHotseat, endTurn, canControl } from "./battle.ts";
 import { UNIT_STATS } from "./units.ts";
 import { MAP_SLOT_CAP } from "./types.ts";
 import { findPath, pathCost, blockedAt } from "./pathfinding.ts";
@@ -265,6 +265,53 @@ describe("lobby slots", () => {
     assert.equal(MAP_SLOT_CAP.small, 4);
     assert.equal(MAP_SLOT_CAP.medium, 6);
     assert.equal(MAP_SLOT_CAP.large, 8);
+  });
+});
+
+describe("hotseat", () => {
+  it("holds the board until the next local player starts their turn", () => {
+    let state = createBattle({
+      seed: 9,
+      mapSize: "small",
+      participants: [
+        {
+          id: "p-host",
+          kind: "human",
+          name: "Host",
+          faction: "empire",
+          team: 1,
+          color: 0,
+          army: { captain: 1, soldier: 1 },
+          ready: true,
+          host: true,
+        },
+        {
+          id: "p-two",
+          kind: "local",
+          name: "Guest",
+          faction: "brood",
+          team: 2,
+          color: 1,
+          army: { tyrant: 1, broodling: 2 },
+          ready: true,
+          host: false,
+        },
+      ],
+      localPlayerId: "p-host",
+      teamOrder: [1, 2],
+    });
+    assert.ok(state.hotseatPending);
+    assert.equal(state.hotseatPending?.playerId, "p-host");
+    state = beginHotseat(state);
+    assert.equal(state.hotseatPending, null);
+    assert.equal(state.playerId, "p-host");
+    state = endTurn(state);
+    assert.ok(state.hotseatPending);
+    assert.equal(state.hotseatPending?.playerId, "p-two");
+    assert.equal(canControl(state), false);
+    state = beginHotseat(state);
+    assert.equal(state.playerId, "p-two");
+    assert.equal(state.turnTeam, 2);
   });
 });
 

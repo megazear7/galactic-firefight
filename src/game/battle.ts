@@ -9,7 +9,7 @@ import {
   unitRadius,
 } from "./combat";
 import { dist, generateMap, teamDeployTiles, tileToWorld } from "./map";
-import { playable, shuffleTeams } from "./lobby";
+import { devicePlayers, isDevicePlayer, playable, shuffleTeams } from "./lobby";
 import { findPath, pathCost, pointAlong, reachable } from "./pathfinding";
 import type {
   ActMode,
@@ -213,6 +213,21 @@ export function localParticipant(state: BattleState) {
   return state.participants.find((p) => p.id === state.playerId) ?? state.participants.find((p) => p.host) ?? null;
 }
 
+export function hotseatActive(state: BattleState) {
+  return devicePlayers(state.participants).length >= 2;
+}
+
+function deviceOnTeam(state: BattleState, team: number) {
+  return devicePlayers(state.participants).filter((p) => p.team === team);
+}
+
+function nextDeviceOnTeam(state: BattleState, exceptId: string) {
+  return deviceOnTeam(state, state.turnTeam).find((p) => {
+    if (p.id === exceptId) return false;
+    return state.units.some((u) => u.alive && u.playerId === p.id && !u.acted);
+  });
+}
+
 export function foes(a: { team: number }, b: { team: number }) {
   return a.team !== b.team;
 }
@@ -329,7 +344,17 @@ export function createBattle(opts: {
     fx: [],
     explored: emptyMask(map),
     actMode: "move",
+    hotseatPending: null,
   };
+  const firstLocal = deviceOnTeam(state, firstTeam)[0];
+  if (hotseatActive(state) && firstLocal) {
+    return revealExplored({
+      ...state,
+      playerId: firstLocal.id,
+      playerFaction: firstLocal.faction,
+      hotseatPending: { playerId: firstLocal.id, name: firstLocal.name, color: firstLocal.color },
+    });
+  }
   return revealExplored(state);
 }
 
@@ -387,8 +412,7 @@ export function checkWinner(state: BattleState): BattleState {
 }
 
 function teamIsLocal(state: BattleState, team = state.turnTeam) {
-  const me = localParticipant(state);
-  return Boolean(me && me.team === team);
+  return deviceOnTeam(state, team).length > 0;
 }
 
 function resumeSide(state: BattleState): BattleState {
@@ -415,11 +439,13 @@ export function unitById(state: BattleState, id: string | null) {
 }
 
 export function canControl(state: BattleState) {
+  if (state.hotseatPending) return false;
   if (state.phase === "moving" || state.phase === "resolving" || state.phase === "enemyTurn") {
     return false;
   }
   if (state.phase === "gameOver") return false;
-  return teamIsLocal(state);
+  const me = localParticipant(state);
+  return Boolean(me && isDevicePlayer(me) && me.team === state.turnTeam);
 }
 
 export function whyImmobile(state: BattleState, unit: UnitState): string | null {
@@ -768,7 +794,39 @@ export function waitUnit(state: BattleState): BattleState {
   return resumeSide(next);
 }
 
+export function beginHotseat(state: BattleState): BattleState {
+  const hold = state.hotseatPending;
+  if (!hold) return state;
+  const p = state.participants.find((x) => x.id === hold.playerId);
+  return {
+    ...state,
+    hotseatPending: null,
+    playerId: hold.playerId,
+    playerFaction: p?.faction ?? state.playerFaction,
+    selectedId: null,
+    pendingMove: null,
+    actMode: "move",
+    phase: "select",
+  };
+}
+
 export function endTurn(state: BattleState): BattleState {
+  if (state.hotseatPending) return state;
+  const me = localParticipant(state);
+  if (me && isDevicePlayer(me) && me.team === state.turnTeam && activationsDone(state) < activationsCap(state)) {
+    const nextLocal = nextDeviceOnTeam(state, me.id);
+    if (nextLocal && hotseatActive(state)) {
+      return {
+        ...state,
+        selectedId: null,
+        pendingMove: null,
+        actMode: "move",
+        phase: "select",
+        hotseatPending: { playerId: nextLocal.id, name: nextLocal.name, color: nextLocal.color },
+        log: [log(`Pass the device to ${nextLocal.name}.`, "neutral"), ...state.log].slice(0, 40),
+      };
+    }
+  }
   const finishing = state.turnTeam;
   const order = (state.teamOrder.length ? state.teamOrder : livingTeams(state)).filter((t) =>
     state.units.some((u) => u.alive && u.team === t),
@@ -793,7 +851,13 @@ export function endTurn(state: BattleState): BattleState {
       };
     }),
   );
-  const enemyPhase = teamIsLocal({ ...state, turnTeam: nextTeam }) ? "select" : "enemyTurn";
+  const locals = deviceOnTeam({ ...state, units }, nextTeam);
+  const nextLocal = locals[0];
+  const enemyPhase = nextLocal ? "select" : "enemyTurn";
+  const hold =
+    nextLocal && hotseatActive(state)
+      ? { playerId: nextLocal.id, name: nextLocal.name, color: nextLocal.color }
+      : null;
   return {
     ...state,
     units,
@@ -801,15 +865,25 @@ export function endTurn(state: BattleState): BattleState {
     turnTeam: nextTeam,
     round: wrapped ? state.round + 1 : state.round,
     phase: enemyPhase,
+    playerId: nextLocal?.id ?? state.playerId,
+    playerFaction: nextLocal?.faction ?? state.playerFaction,
     selectedId: null,
     pendingMove: null,
     pendingShot: null,
     actMode: "move",
-    log: [log(`Team ${nextTeam} — five activations.`, nextFaction), ...state.log].slice(0, 40),
+    hotseatPending: hold,
+    log: [
+      log(
+        hold ? `Pass the device to ${hold.name}.` : `Team ${nextTeam} — five activations.`,
+        nextFaction,
+      ),
+      ...state.log,
+    ].slice(0, 40),
   };
 }
 
 export function applyAiIntent(state: BattleState): BattleState {
+  if (state.hotseatPending) return state;
   if (state.phase !== "enemyTurn") return state;
   if (turnExhausted(state)) return endTurn(state);
   const intent = pickAiAction(state);

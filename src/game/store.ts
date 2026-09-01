@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import {
   applyAiIntent,
+  beginHotseat,
   beginShoot,
   checkWinner,
   chooseDestination,
@@ -115,6 +116,7 @@ type Store = {
   patchParticipant: (id: string, patch: Partial<Participant>) => void;
   toggleReady: (id: string) => void;
   startMatch: () => void;
+  startHotseat: () => void;
   joinListing: (listing: PublicListing, passcode: string, user?: { id?: string; name?: string; email?: string } | null) => string | null;
   beginBattle: (opts?: { enemyArmy?: ArmyLoadout; first?: Faction }) => void;
   loadRecord: (g: GameRecord) => void;
@@ -270,7 +272,14 @@ export const useGame = create<Store>((set, get) => ({
       color: nextColor(participants.map((p) => p.color)),
       army: defaultLoadout(faction, points),
       email: email?.trim() || undefined,
-      name: kind === "invite" ? email?.trim() || "Invite" : kind === "open" ? "Open slot" : "AI",
+      name:
+        kind === "invite"
+          ? email?.trim() || "Invite"
+          : kind === "open"
+            ? "Open slot"
+            : kind === "local"
+              ? `Player ${participants.filter((p) => p.kind === "local" || p.host).length + 1}`
+              : "AI",
       ready: kind === "ai",
     });
     const next = [...participants, slot];
@@ -307,6 +316,12 @@ export const useGame = create<Store>((set, get) => ({
     sfx.ui();
     const next = participants.map((p) => (p.id === id ? { ...p, ready: !p.ready } : p));
     set({ participants: next, record: record ? { ...record, participants: next } : record });
+  },
+  startHotseat: () => {
+    const battle = get().battle;
+    if (!battle?.hotseatPending) return;
+    sfx.confirm();
+    set({ battle: beginHotseat(battle) });
   },
   startMatch: () => {
     const { record, participants, points, mapSize, mode } = get();
@@ -530,6 +545,10 @@ export const useGame = create<Store>((set, get) => ({
     let { battle, aiTimer, resolveTimer } = get();
     if (!battle) return;
     battle = revealExplored(ageFx(battle, dt));
+    if (battle.hotseatPending) {
+      if (battle !== get().battle) set({ battle });
+      return;
+    }
     if (battle.phase === "moving") {
       const prevFx = battle.fx.length;
       const next = stepMove(battle, dt);

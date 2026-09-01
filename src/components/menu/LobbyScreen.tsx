@@ -14,8 +14,9 @@ function SlotCard({ p, host, localId, points }: { p: Participant; host: boolean;
   const patch = useGame((s) => s.patchParticipant);
   const toggleReady = useGame((s) => s.toggleReady);
   const removeSlot = useGame((s) => s.removeSlot);
-  const mine = p.id === localId || (p.kind === "ai" && host);
-  const canEdit = mine || (host && p.kind !== "human");
+  const remote = p.kind === "human" && !p.host;
+  const mine = p.id === localId || (p.kind === "ai" && host) || (p.kind === "local" && host);
+  const canEdit = mine || (host && !remote);
 
   function bump(type: UnitType, dir: 1 | -1) {
     if (!canEdit || p.kind === "open" || p.kind === "invite") return;
@@ -37,7 +38,17 @@ function SlotCard({ p, host, localId, points }: { p: Participant; host: boolean;
         <div>
           <p className="font-display text-lg font-semibold leading-tight">{p.name}</p>
           <p className="text-xs uppercase tracking-wider text-muted">
-            {p.kind === "human" ? (p.host ? "Host" : "Human") : p.kind === "ai" ? "AI" : p.kind === "open" ? "Open slot" : `Invite ${p.email ?? ""}`}
+            {p.kind === "human"
+              ? p.host
+                ? "Host"
+                : "Human"
+              : p.kind === "local"
+                ? "This device"
+                : p.kind === "ai"
+                  ? "AI"
+                  : p.kind === "open"
+                    ? "Open slot"
+                    : `Invite ${p.email ?? ""}`}
           </p>
         </div>
         {host && !p.host && (
@@ -47,6 +58,14 @@ function SlotCard({ p, host, localId, points }: { p: Participant; host: boolean;
         )}
       </div>
 
+      {p.kind === "local" && canEdit && (
+        <Input
+          className="mt-3"
+          value={p.name}
+          onChange={(e) => patch(p.id, { name: e.target.value })}
+          placeholder="Player name"
+        />
+      )}
       {p.kind !== "open" && p.kind !== "invite" && (
         <>
           <div className="mt-3 grid grid-cols-2 gap-2">
@@ -118,7 +137,7 @@ function SlotCard({ p, host, localId, points }: { p: Participant; host: boolean;
         </>
       )}
 
-      {p.kind === "human" && (
+      {(p.kind === "human" || p.kind === "local") && (
         <Button className="mt-3 w-full" variant={p.ready ? "secondary" : "default"} onClick={() => toggleReady(p.id)}>
           {p.ready ? "Ready" : "Mark ready"}
         </Button>
@@ -170,6 +189,9 @@ export function LobbyScreen() {
         <div className="flex flex-wrap items-end gap-2">
           <Button variant="secondary" onClick={() => addSlot("ai")}>
             Add AI
+          </Button>
+          <Button variant="secondary" onClick={() => addSlot("local")}>
+            Add player on this device
           </Button>
           {visibility === "public" && (
             <Button variant="secondary" onClick={() => addSlot("open")}>

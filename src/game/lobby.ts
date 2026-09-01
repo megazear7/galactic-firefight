@@ -39,7 +39,17 @@ export function makeParticipant(partial: Partial<Participant> & Pick<Participant
   return {
     id: partial.id ?? nid(),
     kind: partial.kind,
-    name: partial.name ?? (partial.kind === "ai" ? "AI" : partial.kind === "open" ? "Open slot" : partial.kind === "invite" ? "Invite" : "Commander"),
+    name:
+      partial.name ??
+      (partial.kind === "ai"
+        ? "AI"
+        : partial.kind === "open"
+          ? "Open slot"
+          : partial.kind === "invite"
+            ? "Invite"
+            : partial.kind === "local"
+              ? "Player"
+              : "Commander"),
     userId: partial.userId,
     email: partial.email,
     faction: partial.faction,
@@ -77,13 +87,25 @@ export function defaultMatch(points: PointScale, local: { name: string; userId?:
   return [host, ai];
 }
 
+export function isDevicePlayer(p: Participant) {
+  return p.kind === "local" || p.host;
+}
+
+export function isSeatedHuman(p: Participant) {
+  return p.kind === "human" || p.kind === "local";
+}
+
 export function playable(p: Participant) {
-  return p.kind === "human" || p.kind === "ai";
+  return p.kind === "human" || p.kind === "local" || p.kind === "ai";
 }
 
 export function humansReady(participants: Participant[]) {
-  const humans = participants.filter((p) => p.kind === "human");
+  const humans = participants.filter(isSeatedHuman);
   return humans.length > 0 && humans.every((p) => p.ready);
+}
+
+export function devicePlayers(participants: Participant[]) {
+  return participants.filter(isDevicePlayer);
 }
 
 export function listingOf(rec: GameRecord): PublicListing {
@@ -97,7 +119,7 @@ export function listingOf(rec: GameRecord): PublicListing {
     mapSize: rec.mapSize,
     points: rec.points,
     passcodeRequired: Boolean(rec.passcode),
-    humanCount: rec.participants.filter((p) => p.kind === "human").length,
+    humanCount: rec.participants.filter(isSeatedHuman).length,
     aiCount: rec.participants.filter((p) => p.kind === "ai").length,
     slotCap: slotCap(rec.mapSize),
     openSlots: open,

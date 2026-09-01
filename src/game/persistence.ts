@@ -48,6 +48,7 @@ function migrateBattle(raw: BattleState | null): BattleState | null {
     turnTeam: raw.turnTeam ?? (raw.turn === "brood" ? 2 : 1),
     teamOrder: raw.teamOrder?.length ? raw.teamOrder : [1, 2],
     participants: raw.participants ?? [],
+    hotseatPending: raw.hotseatPending ?? null,
   };
 }
 
