@@ -26,6 +26,22 @@ function clipKey(name: string) {
   return (parts[1] ?? parts[0] ?? name).trim();
 }
 
+function meshTint(type: UnitType, faction: Faction) {
+  if (faction === "brood") return 0.68;
+  if (type === "sniper" || type === "machine_gunner") return 1.34;
+  return 1.18;
+}
+
+function tintMaterial(material: THREE.Material | THREE.Material[], tint: number) {
+  const one = (mat: THREE.Material) => {
+    const copy = mat.clone();
+    const colored = copy as THREE.MeshStandardMaterial;
+    if (colored.color) colored.color.multiplyScalar(tint);
+    return copy;
+  };
+  return Array.isArray(material) ? material.map(one) : one(material);
+}
+
 function pickAction(actions: Record<string, THREE.AnimationAction | null>, pose: UnitPose) {
   const entries = Object.entries(actions).filter(([, action]) => action);
   if (!entries.length) return null;
@@ -42,6 +58,7 @@ function SkinnedClip({
   pose,
   loop,
   scale,
+  tint,
   onFinished,
   onLoop,
 }: {
@@ -49,6 +66,7 @@ function SkinnedClip({
   pose: UnitPose;
   loop: boolean;
   scale: number;
+  tint: number;
   onFinished?: () => void;
   onLoop?: () => void;
 }) {
@@ -62,9 +80,10 @@ function SkinnedClip({
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       if ((mesh as THREE.SkinnedMesh).isSkinnedMesh) mesh.frustumCulled = false;
+      mesh.material = tintMaterial(mesh.material, tint);
     });
     return copy;
-  }, [scene]);
+  }, [scene, tint]);
   const { actions } = useAnimations(animations, root);
 
   useEffect(() => {
@@ -141,6 +160,7 @@ export function UnitModel({
         pose={playing}
         loop={loop}
         scale={set.scale}
+        tint={meshTint(type, faction)}
         onLoop={playing === "idle" && canSpecial ? onIdleLoop : undefined}
         onFinished={playing === "idle_special" ? onSpecialDone : loop ? undefined : onFinished}
       />

@@ -5,7 +5,7 @@ import { UNIT_STATS, SPRITE_SRC } from "@/game/units";
 import type { UnitState } from "@/game/types";
 import { colorHex } from "@/game/lobby";
 import { UnitModel } from "./UnitModel";
-import { hasUnitModel, unitPose, type UnitPose } from "@/game/models";
+import { hasUnitModel, unitModelSet, unitPose, type UnitPose } from "@/game/models";
 import { tileToWorld } from "@/game/map";
 import type { BattleMap, BattleState, GraphicsMode } from "@/game/types";
 
@@ -27,11 +27,13 @@ function useSprite(src: string) {
 
 function UnitSprite({
   type,
+  faction,
   height,
   size,
   opacity,
 }: {
   type: UnitState["type"];
+  faction: UnitState["faction"];
   height: number;
   size: number;
   opacity: number;
@@ -41,7 +43,7 @@ function UnitSprite({
     <sprite position={[0, height * 0.52, 0]} scale={[1.15 * size, height, 1]}>
       <spriteMaterial
         map={tex}
-        color="#f2f0ea"
+        color={faction === "brood" ? "#8a8078" : "#ffffff"}
         transparent
         opacity={opacity}
         depthWrite={false}
@@ -76,6 +78,7 @@ export function UnitVisual({
   const ring = useRef<THREE.Mesh>(null);
   const height = 1.15 * stats.size + (unit.type === "tyrant" ? 0.55 : 0);
   const modeled = graphics !== "sprites" && hasUnitModel(unit.type, unit.faction);
+  const modelScale = unitModelSet(unit.type, unit.faction)?.scale ?? 1;
   const logical = unitPose(unit, battle);
   const [held, setHeld] = useState<UnitPose | null>(null);
   useEffect(() => {
@@ -87,7 +90,7 @@ export function UnitVisual({
   }, [logical, unit.alive]);
   const pose = !unit.alive ? "dead" : logical === "move" ? "move" : (held ?? logical);
   const clearHold = useCallback(() => setHeld(null), []);
-  const barY = modeled ? 1.92 * stats.size : height + 0.18;
+  const barY = modeled ? 1.92 * modelScale : height + 0.18;
 
   useLayoutEffect(() => {
     if (group.current) group.current.position.set(x, 0, z);
@@ -108,7 +111,13 @@ export function UnitVisual({
   const opacity = dim ? 0.78 : unit.hp / unit.maxHp < 0.35 ? 0.9 : 1;
   const playerColor = colorHex(unit.color ?? 0);
   const sprite = (
-    <UnitSprite type={unit.type} height={height} size={stats.size} opacity={unit.alive ? opacity : 0.55} />
+    <UnitSprite
+      type={unit.type}
+      faction={unit.faction}
+      height={height}
+      size={stats.size}
+      opacity={unit.alive ? opacity : 0.55}
+    />
   );
 
   return (

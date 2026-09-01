@@ -2,16 +2,16 @@ import { Suspense, useEffect, useLayoutEffect, useState } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { ContactShadows } from "@react-three/drei";
 import { UnitModel } from "@/components/game/UnitModel";
-import { hasUnitModel } from "@/game/models";
+import { hasUnitModel, unitModelSet } from "@/game/models";
 import { SPRITE_SRC } from "@/game/units";
 import type { Faction, UnitType } from "@/game/types";
 import { cn } from "@/lib/utils";
 
-function FaceOn() {
+function FaceOn({ lookY }: { lookY: number }) {
   const { camera } = useThree();
   useLayoutEffect(() => {
-    camera.lookAt(0, 0.88, 0);
-  }, [camera]);
+    camera.lookAt(0, lookY, 0);
+  }, [camera, lookY]);
   return null;
 }
 
@@ -25,6 +25,7 @@ export function UnitPortrait({
   className?: string;
 }) {
   const modeled = hasUnitModel(type, faction);
+  const scale = unitModelSet(type, faction)?.scale ?? 1;
   const [ready, setReady] = useState(false);
   useEffect(() => setReady(true), []);
 
@@ -51,9 +52,9 @@ export function UnitPortrait({
         className="pointer-events-none size-full"
         dpr={[1, 2]}
         gl={{ antialias: true, alpha: true }}
-        camera={{ position: [3.3, 1.55, 0], fov: 32, near: 0.1, far: 50 }}
+        camera={{ position: [3.3 * scale, 1.55 * scale, 0], fov: 32, near: 0.1, far: 50 }}
       >
-        <FaceOn />
+        <FaceOn lookY={0.88 * scale} />
         <hemisphereLight args={["#d0d4dc", "#3a3832", 0.9]} />
         <ambientLight intensity={0.28} />
         <directionalLight position={[3.5, 7, 4]} intensity={1.2} />
@@ -61,7 +62,7 @@ export function UnitPortrait({
         <Suspense fallback={null}>
           <UnitModel type={type} faction={faction} pose="idle" seed={`${type}-codex`} facing={0} />
         </Suspense>
-        <ContactShadows position={[0, 0, 0]} opacity={0.42} scale={5} blur={2.2} far={2.4} />
+        <ContactShadows position={[0, 0, 0]} opacity={0.42} scale={5 * scale} blur={2.2} far={2.4 * scale} />
       </Canvas>
     </div>
   );

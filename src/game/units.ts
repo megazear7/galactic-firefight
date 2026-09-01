@@ -106,7 +106,7 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
     cost: 75,
     hp: 28,
     move: 4,
-    speed: 0.78,
+    speed: 0.273,
     range: 4,
     damage: 6,
     overwatchDamage: 2,

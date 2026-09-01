@@ -13,7 +13,7 @@ import { MAP_SLOT_CAP } from "./types.ts";
 import { findPath, pathCost, blockedAt } from "./pathfinding.ts";
 import { circleHitsTerrain, dist, generateMap, idx, MAP_DIMS } from "./map.ts";
 import { enemyVisible, visionMask } from "./vision.ts";
-import { hasUnitModel, pickModelUrl, unitPose } from "./models.ts";
+import { hasUnitModel, pickModelUrl, unitModelSet, unitPose } from "./models.ts";
 import { allGameAssetUrls } from "./preload.ts";
 import type { BattleMap, BattleState, UnitState } from "./types.ts";
 
@@ -688,6 +688,8 @@ describe("unit models", () => {
     assert.match(pickModelUrl("tyrant", "brood", "melee", "u-1") ?? "", /swarm-tyrant-melee-/);
     assert.match(pickModelUrl("tyrant", "brood", "ranged", "u-1") ?? "", /swarm-tyrant-ranged-/);
     assert.match(pickModelUrl("tyrant", "brood", "dead", "u-1") ?? "", /swarm-tyrant-dead-/);
+    assert.equal(unitModelSet("tyrant", "brood")?.scale, 2);
+    assert.equal(unitModelSet("soldier", "empire")?.scale, 1);
   });
 
   it("preloads audio, models, and sprites before a match", () => {

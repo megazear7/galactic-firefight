@@ -103,7 +103,12 @@ const CATALOG: Partial<Record<UnitType, Partial<Record<Faction, UnitModelSet>>>>
     brood: pack("brood", "spatling", { idle: 2, move: 3, ranged: 2, dead: 2 }, { filePrefix: "swarm" }),
   },
   tyrant: {
-    brood: pack("brood", "tyrant", { idle: 1, move: 1, melee: 4, ranged: 1, dead: 1 }, { filePrefix: "swarm" }),
+    brood: pack(
+      "brood",
+      "tyrant",
+      { idle: 1, move: 1, melee: 4, ranged: 1, dead: 1 },
+      { filePrefix: "swarm", scale: 2 },
+    ),
   },
 };
 
