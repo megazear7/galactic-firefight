@@ -8,6 +8,7 @@ import {
 } from "./combat.ts";
 import { createBattle, confirmShoot, selectUnit, setActMode, turnExhausted, waitUnit, activationsDone, activationsCap } from "./battle.ts";
 import { UNIT_STATS } from "./units.ts";
+import { MAP_SLOT_CAP } from "./types.ts";
 import { findPath, pathCost, blockedAt } from "./pathfinding.ts";
 import { circleHitsTerrain, dist, generateMap, MAP_DIMS } from "./map.ts";
 import type { BattleMap, UnitState } from "./types.ts";
@@ -29,6 +30,9 @@ function unit(partial: Partial<UnitState> & Pick<UnitState, "id" | "col" | "row"
   return {
     type: "soldier",
     faction: "empire",
+    playerId: "p-host",
+    team: 1,
+    color: 0,
     facing: 0,
     hp: 9,
     maxHp: 9,
@@ -147,7 +151,7 @@ describe("line of sight", () => {
 describe("overwatch", () => {
   it("picks the closest eligible watcher and skips those who already overwatched", () => {
     const map = floorMap();
-    const mover = unit({ id: "m", col: 6, row: 3, faction: "brood", type: "broodling" });
+    const mover = unit({ id: "m", col: 6, row: 3, faction: "brood", type: "broodling", team: 2, playerId: "p-ai", color: 1 });
     const far = unit({
       id: "far",
       col: 0.4,
@@ -246,14 +250,21 @@ describe("fire/move toggle", () => {
       first: "brood",
     });
     assert.equal(state.phase, "enemyTurn");
-    const shooter = state.units.find((x) => x.alive && x.faction === "brood" && UNIT_STATS[x.type].range > 0);
-    const victim = state.units.find((x) => x.alive && x.faction === "empire");
+    const shooter = state.units.find((x) => x.alive && x.playerId === state.playerId && UNIT_STATS[x.type].range > 0);
+    const victim = state.units.find((x) => x.alive && x.team !== shooter?.team);
     assert.ok(shooter && victim);
     state = { ...state, selectedId: shooter.id, actMode: "fire" };
     const next = confirmShoot(state, victim.id);
-    assert.equal(next, state);
     assert.equal(next.phase, "enemyTurn");
-    assert.equal(victim.hp, state.units.find((x) => x.id === victim.id)?.hp);
+    assert.equal(next.pendingShot, null);
+  });
+});
+
+describe("lobby slots", () => {
+  it("caps players by map size", () => {
+    assert.equal(MAP_SLOT_CAP.small, 4);
+    assert.equal(MAP_SLOT_CAP.medium, 6);
+    assert.equal(MAP_SLOT_CAP.large, 8);
   });
 });
 
@@ -297,6 +308,6 @@ describe("activations", () => {
     }
     assert.equal(state.turn, "brood");
     assert.equal(turnExhausted(state), false);
-    assert.equal(activationsDone(state, "empire"), 0);
+    assert.equal(activationsDone(state, 1), 0);
   });
 });

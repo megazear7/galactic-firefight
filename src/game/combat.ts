@@ -141,7 +141,7 @@ export function isStealthed(unit: UnitState, viewer: UnitState | null) {
 
 export function visibleTo(viewer: UnitState, target: UnitState, map: BattleMap, units: UnitState[]) {
   if (!viewer.alive || !target.alive) return false;
-  if (viewer.faction === target.faction) return true;
+  if (viewer.team === target.team) return true;
   if (dist(viewer, target) > sightRange(viewer.type) + 0.05) return false;
   if (isStealthed(target, viewer)) return false;
   return hasLos(map, viewer, target, units, [viewer.id, target.id]);
@@ -152,7 +152,7 @@ export function meleeEnemies(unit: UnitState, units: UnitState[]) {
   return units.filter(
     (o) =>
       o.alive &&
-      o.faction !== unit.faction &&
+      o.team !== unit.team &&
       dist(unit, o) <= stats.meleeRange + unitRadius(o.type) + 0.05,
   );
 }
@@ -162,7 +162,7 @@ export function rangedTargets(unit: UnitState, units: UnitState[], map: BattleMa
   if (stats.range <= 0) return [];
   if (unit.engagedAtTurnStart) return [];
   return units.filter((o) => {
-    if (!o.alive || o.faction === unit.faction) return false;
+    if (!o.alive || o.team === unit.team) return false;
     if (dist(unit, o) > stats.range + 0.05) return false;
     if (!inArc(unit, o)) return false;
     if (!visibleTo(unit, o, map, units)) return false;
@@ -175,14 +175,14 @@ export function shotVictims(attacker: UnitState, primary: UnitState, units: Unit
   const ids = new Set<string>([primary.id]);
   if (stats.aoeRadius > 0) {
     for (const u of units) {
-      if (!u.alive || u.faction === attacker.faction) continue;
+      if (!u.alive || u.team === attacker.team) continue;
       if (dist(primary, u) <= stats.aoeRadius + 0.05) ids.add(u.id);
     }
   }
   if (stats.multiTargetRadius > 0) {
     const extras = units
       .filter((u) => {
-        if (!u.alive || u.faction === attacker.faction || u.id === primary.id) return false;
+        if (!u.alive || u.team === attacker.team || u.id === primary.id) return false;
         if (dist(primary, u) > stats.multiTargetRadius + 0.05) return false;
         if (dist(attacker, u) > stats.range + 0.05) return false;
         if (!inArc(attacker, u)) return false;
@@ -205,7 +205,7 @@ export function pickOverwatch(
   const sample: UnitState = { ...mover, col: pos.col, row: pos.row };
   let best: { watcherId: string; damage: number; d: number } | null = null;
   for (const w of units) {
-    if (!w.alive || w.faction === mover.faction) continue;
+    if (!w.alive || w.team === mover.team) continue;
     if (w.overwatchedThisTurn) continue;
     const stats = UNIT_STATS[w.type];
     if (stats.overwatchDamage <= 0 || stats.range <= 0) continue;

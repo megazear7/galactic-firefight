@@ -3,6 +3,7 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { UNIT_STATS, SPRITE_SRC } from "@/game/units";
 import type { UnitState } from "@/game/types";
+import { colorHex } from "@/game/lobby";
 import { PlaceholderModel } from "./PlaceholderModel";
 import { tileToWorld } from "@/game/map";
 import type { BattleMap, GraphicsMode } from "@/game/types";
@@ -65,19 +66,24 @@ export function UnitVisual({
   if (hidden) return null;
   const tint = unit.faction === "empire" ? "#c45c5c" : "#8a9a52";
   const opacity = dim ? 0.78 : unit.hp / unit.maxHp < 0.35 ? 0.9 : 1;
+  const playerColor = colorHex(unit.color ?? 0);
 
   return (
     <group ref={group} position={[x, 0, z]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.035, 0]}>
+        <ringGeometry args={[0.34 * stats.size, 0.5 * stats.size, 28]} />
+        <meshBasicMaterial color={playerColor} transparent opacity={selected ? 0.92 : 0.28} depthWrite={false} />
+      </mesh>
       {ready && (
         <mesh ref={ring} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]}>
-          <ringGeometry args={[0.42 * stats.size, 0.58 * stats.size, 32]} />
+          <ringGeometry args={[0.52 * stats.size, 0.62 * stats.size, 32]} />
           <meshBasicMaterial color="#6fbf7a" transparent opacity={0.28} depthWrite={false} />
         </mesh>
       )}
       {selected && (
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
-          <ringGeometry args={[0.62 * stats.size, 0.72 * stats.size, 32]} />
-          <meshBasicMaterial color="#e8e6e1" transparent opacity={0.55} depthWrite={false} />
+          <ringGeometry args={[0.64 * stats.size, 0.76 * stats.size, 32]} />
+          <meshBasicMaterial color={playerColor} transparent opacity={0.7} depthWrite={false} />
         </mesh>
       )}
       {graphics === "models" ? (

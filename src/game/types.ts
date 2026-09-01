@@ -1,4 +1,4 @@
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 export const ACTIVATIONS_PER_TURN = 5;
 
 export type Faction = "empire" | "brood";
@@ -15,6 +15,56 @@ export type PointScale = 100 | 200 | 300;
 export type MapSize = "small" | "medium" | "large";
 export type GraphicsMode = "sprites" | "models";
 export type PlayMode = "single" | "multi";
+export type SlotKind = "human" | "ai" | "open" | "invite";
+export type GameVisibility = "public" | "private";
+export type ArmyLoadout = Partial<Record<UnitType, number>>;
+
+export const MAP_SLOT_CAP: Record<MapSize, number> = {
+  small: 4,
+  medium: 6,
+  large: 8,
+};
+
+export const PLAYER_PALETTE = [
+  { id: 0, name: "Crimson", hex: "#c45c4a" },
+  { id: 1, name: "Amber", hex: "#d4a054" },
+  { id: 2, name: "Gold", hex: "#e8d07a" },
+  { id: 3, name: "Viridian", hex: "#6fbf7a" },
+  { id: 4, name: "Teal", hex: "#4aa8a8" },
+  { id: 5, name: "Azure", hex: "#5a8ad4" },
+  { id: 6, name: "Violet", hex: "#8a6fd4" },
+  { id: 7, name: "Rose", hex: "#d46fa0" },
+] as const;
+
+export type Participant = {
+  id: string;
+  kind: SlotKind;
+  name: string;
+  userId?: string;
+  email?: string;
+  faction: Faction;
+  team: number;
+  color: number;
+  army: ArmyLoadout;
+  ready: boolean;
+  host: boolean;
+};
+
+export type PublicListing = {
+  id: string;
+  hostId: string;
+  hostName: string;
+  name: string;
+  mapSize: MapSize;
+  points: PointScale;
+  passcodeRequired: boolean;
+  humanCount: number;
+  aiCount: number;
+  slotCap: number;
+  openSlots: number;
+  full: boolean;
+  updatedAt: string;
+};
 
 export type TileKind = "floor" | "wall" | "structure";
 
@@ -46,6 +96,9 @@ export type UnitState = {
   id: string;
   type: UnitType;
   faction: Faction;
+  playerId: string;
+  team: number;
+  color: number;
   col: number;
   row: number;
   facing: number;
@@ -74,7 +127,7 @@ export type LogLine = {
   tone: "neutral" | "empire" | "brood" | "danger";
 };
 
-export type Winner = Faction | "draw" | null;
+export type Winner = number | "draw" | null;
 
 export type Phase =
   | "select"
@@ -136,6 +189,10 @@ export type BattleState = {
   log: LogLine[];
   winner: Winner;
   playerFaction: Faction;
+  playerId: string;
+  turnTeam: number;
+  teamOrder: number[];
+  participants: Participant[];
   enemyFaction: Faction;
   mode: PlayMode;
   fx: FxEvent[];
@@ -143,18 +200,21 @@ export type BattleState = {
   actMode: ActMode;
 };
 
-export type ArmyLoadout = Partial<Record<UnitType, number>>;
-
 export type GameRecord = {
   version: number;
   id: string;
   name: string;
   createdAt: string;
   updatedAt: string;
-  status: "setup" | "active" | "victory" | "defeat";
+  status: "setup" | "lobby" | "active" | "victory" | "defeat";
   mode: PlayMode;
   points: PointScale;
   mapSize: MapSize;
+  visibility: GameVisibility;
+  passcode?: string;
+  participants: Participant[];
+  teamOrder: number[];
+  playerId: string;
   playerFaction: Faction;
   hostId?: string;
   guestId?: string;

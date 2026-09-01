@@ -1,7 +1,7 @@
 import { circleHitsTerrain, dist, idx, isBlocked } from "./map";
 import { hasLos } from "./combat";
 import { sightRange } from "./units";
-import type { BattleMap, BattleState, Faction, UnitState } from "./types";
+import type { BattleMap, BattleState, UnitState } from "./types";
 
 export { sightRange };
 
@@ -23,11 +23,11 @@ function canSeeTile(unit: UnitState, map: BattleMap, units: UnitState[], col: nu
   return hasLos(map, unit, before, units, [unit.id]);
 }
 
-/** Tiles currently seen by living units of `faction`. */
-export function visionMask(state: BattleState, faction: Faction): boolean[] {
+/** Tiles currently seen by living units of `team`. */
+export function visionMask(state: BattleState, team: number): boolean[] {
   const { map, units } = state;
   const vis = emptyMask(map);
-  const viewers = units.filter((u) => u.alive && u.faction === faction);
+  const viewers = units.filter((u) => u.alive && u.team === team);
   for (const unit of viewers) {
     const cap = sightRange(unit.type);
     const reach = cap + 0.6;
@@ -60,13 +60,20 @@ export function tileVisibleNow(mask: boolean[], map: BattleMap, col: number, row
   return !!mask[idx(c, r, map.cols)];
 }
 
+export function localTeam(state: BattleState) {
+  const p = state.participants?.find((x) => x.id === state.playerId);
+  if (p) return p.team;
+  const u = state.units.find((x) => x.playerId === state.playerId);
+  return u?.team ?? 1;
+}
+
 export function enemyVisible(state: BattleState, unit: UnitState, vis: boolean[]) {
-  if (unit.faction === state.playerFaction) return true;
+  if (unit.team === localTeam(state)) return true;
   return tileVisibleNow(vis, state.map, unit.col, unit.row);
 }
 
 export function revealExplored(state: BattleState): BattleState {
-  const vis = visionMask(state, state.playerFaction);
+  const vis = visionMask(state, localTeam(state));
   const explored = state.explored.slice();
   let changed = false;
   for (let i = 0; i < vis.length; i++) {

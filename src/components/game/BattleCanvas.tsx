@@ -11,7 +11,7 @@ import { VisibilityOverlay } from "./VisibilityOverlay";
 import { CombatFx } from "./CombatFx";
 import { FogOfWar } from "./FogOfWar";
 import { readyUnits, canControl } from "@/game/battle";
-import { enemyVisible, visionMask } from "@/game/vision";
+import { enemyVisible, localTeam, visionMask } from "@/game/vision";
 import type { MapControls as MapControlsImpl } from "three-stdlib";
 
 function Loop() {
@@ -66,7 +66,7 @@ function CameraRig() {
     if (!battle || !controls.current) return;
     if (seeded.current === battle.map.seed) return;
     seeded.current = battle.map.seed;
-    const mine = battle.units.filter((u) => u.alive && u.faction === battle.playerFaction);
+    const mine = battle.units.filter((u) => u.alive && u.team === localTeam(battle));
     if (!mine.length) return;
     const col = mine.reduce((s, u) => s + u.col, 0) / mine.length;
     const row = mine.reduce((s, u) => s + u.row, 0) / mine.length;
@@ -201,17 +201,17 @@ function Scene() {
     ? battle.units.map((u) => `${u.id}:${u.alive ? 1 : 0}:${u.col.toFixed(2)},${u.row.toFixed(2)}`).join("|")
     : "";
   const vis = useMemo(
-    () => (battle ? visionMask(battle, battle.playerFaction) : []),
+    () => (battle ? visionMask(battle, localTeam(battle)) : []),
     // visKey captures living unit pose
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [visKey, battle?.map, battle?.playerFaction],
+    [visKey, battle?.map, battle?.playerId],
   );
   if (!battle) return null;
   const selected = battle.units.find((u) => u.id === battle.selectedId) ?? null;
   const ready = new Set(readyUnits(battle).map((u) => u.id));
   const showVis =
     selected &&
-    selected.faction === battle.playerFaction &&
+    selected.playerId === battle.playerId &&
     battle.phase !== "moving" &&
     battle.phase !== "resolving" &&
     battle.phase !== "gameOver";
@@ -246,7 +246,7 @@ function Scene() {
               col,
               row,
               battle.units.filter(
-                (u) => u.alive && u.faction !== selected?.faction && enemyVisible(battle, u, vis),
+                (u) => u.alive && u.team !== selected?.team && enemyVisible(battle, u, vis),
               ),
               0.9,
             );
@@ -257,7 +257,7 @@ function Scene() {
             if (battle.phase === "aimShoot") return;
           }
           const occupant = nearestUnit(col, row, battle.units, 0.5);
-          if (occupant && occupant.faction !== battle.playerFaction && !enemyVisible(battle, occupant, vis)) {
+          if (occupant && occupant.team !== localTeam(battle) && !enemyVisible(battle, occupant, vis)) {
             clickTile(col, row);
             return;
           }
@@ -267,7 +267,7 @@ function Scene() {
           }
           if (
             occupant &&
-            occupant.faction === battle.playerFaction &&
+            occupant.playerId === battle.playerId &&
             occupant.id !== selected?.id &&
             battle.phase !== "aimFacing"
           ) {
@@ -318,7 +318,7 @@ function Scene() {
               if (
                 (battle.phase === "aimShoot" || battle.actMode === "fire") &&
                 selected &&
-                u.faction !== selected.faction
+                u.team !== selected.team
               ) {
                 fireAt(u.id);
                 return;
@@ -330,15 +330,15 @@ function Scene() {
               unit={u}
               map={battle.map}
               graphics={settings.graphics}
-              selected={u.id === battle.selectedId && u.faction === battle.playerFaction}
-              ready={ready.has(u.id) && battle.turn === battle.playerFaction}
+              selected={u.id === battle.selectedId && u.playerId === battle.playerId}
+              ready={ready.has(u.id)}
               hidden={hidden}
-              dim={u.faction !== battle.turn}
+              dim={u.team !== battle.turnTeam}
             />
           </group>
         );
       })}
-      {selected && selected.faction === battle.playerFaction && (
+      {selected && selected.playerId === battle.playerId && (
         <MoveOverlay battle={battle} unit={selected} />
       )}
       <CombatFx events={battle.fx ?? []} />

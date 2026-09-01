@@ -1,10 +1,12 @@
-import type { BattleState, GameRecord, Settings, UnitState } from "./types";
+import type { BattleState, GameRecord, PublicListing, Settings, UnitState } from "./types";
+import { listingOf } from "./lobby";
 import { DEFAULT_SETTINGS, SAVE_VERSION } from "./types";
 import { MEGAZEAR_APP } from "@/lib/identity/config";
 import { UserDataClient, UserDataError } from "@/lib/identity/megazear-users";
 
 const LOCAL_GAMES = "gff.games.v1";
 const LOCAL_SETTINGS = "gff.settings.v1";
+const LOCAL_PUBLIC = "gff.public-lobbies.v1";
 
 function nowIso() {
   return new Date().toISOString();
@@ -19,6 +21,9 @@ function migrateUnit(u: UnitState): UnitState {
   return {
     ...u,
     overwatchedThisTurn: u.overwatchedThisTurn ?? false,
+    playerId: u.playerId ?? (u.faction === "empire" ? "p-host" : "p-ai"),
+    team: u.team ?? (u.faction === "empire" ? 1 : 2),
+    color: u.color ?? (u.faction === "empire" ? 0 : 1),
   };
 }
 
@@ -39,6 +44,10 @@ function migrateBattle(raw: BattleState | null): BattleState | null {
       : null,
     explored,
     actMode: raw.actMode === "fire" ? "fire" : "move",
+    playerId: raw.playerId ?? "p-host",
+    turnTeam: raw.turnTeam ?? (raw.turn === "brood" ? 2 : 1),
+    teamOrder: raw.teamOrder?.length ? raw.teamOrder : [1, 2],
+    participants: raw.participants ?? [],
   };
 }
 
@@ -49,10 +58,18 @@ function migrateGame(raw: GameRecord): GameRecord {
     name: raw.name || "Untitled field",
     createdAt: raw.createdAt || nowIso(),
     updatedAt: raw.updatedAt || nowIso(),
-    status: raw.status === "victory" || raw.status === "defeat" || raw.status === "setup" ? raw.status : "active",
+    status:
+      raw.status === "victory" || raw.status === "defeat" || raw.status === "setup" || raw.status === "lobby"
+        ? raw.status
+        : "active",
     mode: raw.mode === "multi" ? "multi" : "single",
     points: raw.points === 200 || raw.points === 300 ? raw.points : 100,
     mapSize: raw.mapSize === "small" || raw.mapSize === "large" ? raw.mapSize : "medium",
+    visibility: raw.visibility === "public" ? "public" : "private",
+    passcode: raw.passcode,
+    participants: raw.participants ?? [],
+    teamOrder: raw.teamOrder ?? [],
+    playerId: raw.playerId ?? "p-host",
     playerFaction: raw.playerFaction === "brood" ? "brood" : "empire",
     hostId: raw.hostId,
     guestId: raw.guestId,
@@ -317,4 +334,90 @@ export async function grantGuestAcl(
     });
   }
   await client.putAcl(MEGAZEAR_APP, { version: 1, updatedAt: ts, entries });
+}
+
+function readLocalPublic(): PublicListing[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_PUBLIC);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as { games?: PublicListing[] };
+    return parsed.games ?? [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalPublic(games: PublicListing[]) {
+  try {
+    localStorage.setItem(LOCAL_PUBLIC, JSON.stringify({ version: SAVE_VERSION, games }));
+  } catch {
+    /* quota */
+  }
+}
+
+export async function listPublicLobbies(client: UserDataClient | null): Promise<PublicListing[]> {
+  const local = readLocalPublic();
+  if (!client) return local.filter((g) => g.openSlots >= 0);
+  try {
+    const rec = await client.get<{ games: PublicListing[] }>({
+      app: MEGAZEAR_APP,
+      visibility: "public",
+      path: "lobbies/index",
+    });
+    const remote = rec.data.games ?? [];
+    const byId = new Map<string, PublicListing>();
+    for (const g of [...local, ...remote]) byId.set(g.id, g);
+    return [...byId.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  } catch {
+    return local;
+  }
+}
+
+export async function upsertPublicLobby(client: UserDataClient | null, rec: GameRecord) {
+  if (rec.visibility !== "public" || rec.status !== "lobby") {
+    await removePublicLobby(client, rec.id);
+    return;
+  }
+  const listing = listingOf(rec);
+  const local = readLocalPublic().filter((g) => g.id !== rec.id);
+  local.unshift(listing);
+  writeLocalPublic(local);
+  if (!client) return;
+  try {
+    await client.put({
+      app: MEGAZEAR_APP,
+      visibility: "public",
+      path: `lobbies/${rec.id}`,
+      data: listing,
+    });
+    await client.put({
+      app: MEGAZEAR_APP,
+      visibility: "public",
+      path: "lobbies/index",
+      data: { version: SAVE_VERSION, games: local },
+    });
+  } catch (err) {
+    console.warn("public lobby publish failed", err);
+  }
+}
+
+export async function removePublicLobby(client: UserDataClient | null, id: string) {
+  writeLocalPublic(readLocalPublic().filter((g) => g.id !== id));
+  if (!client) return;
+  try {
+    const rec = await client.get<{ games: PublicListing[] }>({
+      app: MEGAZEAR_APP,
+      visibility: "public",
+      path: "lobbies/index",
+    });
+    const games = (rec.data.games ?? []).filter((g) => g.id !== id);
+    await client.put({
+      app: MEGAZEAR_APP,
+      visibility: "public",
+      path: "lobbies/index",
+      data: { version: SAVE_VERSION, games },
+    });
+  } catch {
+    /* ignore */
+  }
 }

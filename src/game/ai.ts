@@ -15,7 +15,7 @@ function nearestEnemy(unit: UnitState, units: UnitState[]) {
   let best: UnitState | null = null;
   let bestD = Infinity;
   for (const o of units) {
-    if (!o.alive || o.faction === unit.faction) continue;
+    if (!o.alive || o.team === unit.team) continue;
     const d = dist(unit, o);
     if (d < bestD) {
       bestD = d;
@@ -26,13 +26,13 @@ function nearestEnemy(unit: UnitState, units: UnitState[]) {
 }
 
 export function pickAiAction(state: BattleState): AiIntent | null {
-  const done = state.units.filter((u) => u.faction === state.turn && u.acted).length;
-  const mid = state.units.find((u) => u.alive && u.faction === state.turn && u.moved && !u.acted);
+  const done = state.units.filter((u) => u.team === state.turnTeam && u.acted).length;
+  const mid = state.units.find((u) => u.alive && u.team === state.turnTeam && u.moved && !u.acted);
   if (!mid && done >= ACTIVATIONS_PER_TURN) return null;
 
   const ready = mid
     ? [mid]
-    : state.units.filter((u) => u.alive && u.faction === state.turn && !u.acted);
+    : state.units.filter((u) => u.alive && u.team === state.turnTeam && !u.acted);
   if (ready.length === 0) return null;
 
   ready.sort((a, b) => {

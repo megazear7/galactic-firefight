@@ -8,7 +8,8 @@ import {
   unitBlockers,
   unitRadius,
 } from "./combat";
-import { deployCols, dist, generateMap, openDeployTiles, tileToWorld } from "./map";
+import { dist, generateMap, teamDeployTiles, tileToWorld } from "./map";
+import { playable, shuffleTeams } from "./lobby";
 import { findPath, pathCost, pointAlong, reachable } from "./pathfinding";
 import type {
   ActMode,
@@ -18,6 +19,7 @@ import type {
   FxEvent,
   LogLine,
   MapSize,
+  Participant,
   PlayMode,
   PointScale,
   UnitState,
@@ -162,51 +164,36 @@ export function expandLoadout(loadout: ArmyLoadout, faction: Faction): UnitState
 
 function placeArmy(
   types: UnitState["type"][],
-  faction: Faction,
+  participant: Participant,
   map: BattleState["map"],
   taken: Set<string>,
+  spots: Array<{ col: number; row: number; facing: number }>,
   facing: number,
 ): UnitState[] {
-  const spots = openDeployTiles(faction, map, taken);
-  const mid = (map.rows - 1) / 2;
-  const frontCol =
-    faction === "empire" ? Math.max(...spots.map((s) => s.col), 0) : Math.min(...spots.map((s) => s.col), map.cols);
-  const backCol =
-    faction === "empire" ? Math.min(...spots.map((s) => s.col), map.cols) : Math.max(...spots.map((s) => s.col), 0);
-  const usedRows = new Set<number>();
   const units: UnitState[] = [];
+  let cursor = 0;
   for (let i = 0; i < types.length; i++) {
     const stats = UNIT_STATS[types[i]];
-    const preferBack = stats.stealth || stats.range >= 9;
-    const preferFront = stats.range === 0 || types[i] === "tyrant" || types[i] === "broodling";
-    let best: (typeof spots)[number] | null = null;
-    let bestScore = -Infinity;
-    for (const spot of spots) {
-      const key = `${spot.col},${spot.row}`;
-      if (taken.has(key)) continue;
-      const colWant = preferBack ? backCol : preferFront ? frontCol : (frontCol + backCol) / 2;
-      const score =
-        (usedRows.has(spot.row) ? 0 : 12) -
-        Math.abs(spot.row - mid) * 0.15 -
-        Math.abs(spot.col - colWant) * 1.4;
-      if (score > bestScore) {
-        bestScore = score;
-        best = spot;
-      }
+    let spot = spots[cursor];
+    while (spot && taken.has(`${spot.col},${spot.row}`)) {
+      cursor += 1;
+      spot = spots[cursor];
     }
-    const spot = best ?? {
-      col: deployCols(faction, map)[0],
-      row: Math.min(map.rows - 1, i % map.rows),
-    };
+    if (!spot) {
+      spot = { col: 1, row: Math.min(map.rows - 1, i), facing };
+    }
     taken.add(`${spot.col},${spot.row}`);
-    usedRows.add(spot.row);
+    cursor += 1;
     units.push({
       id: nid(types[i]),
       type: types[i],
-      faction,
+      faction: participant.faction,
+      playerId: participant.id,
+      team: participant.team,
+      color: participant.color,
       col: spot.col,
       row: spot.row,
-      facing,
+      facing: spot.facing ?? facing,
       hp: stats.hp,
       maxHp: stats.hp,
       moved: false,
@@ -222,6 +209,14 @@ function placeArmy(
   return units;
 }
 
+export function localParticipant(state: BattleState) {
+  return state.participants.find((p) => p.id === state.playerId) ?? state.participants.find((p) => p.host) ?? null;
+}
+
+export function foes(a: { team: number }, b: { team: number }) {
+  return a.team !== b.team;
+}
+
 function markEngaged(units: UnitState[]): UnitState[] {
   return units.map((u) => ({
     ...u,
@@ -231,50 +226,106 @@ function markEngaged(units: UnitState[]): UnitState[] {
 
 export function createBattle(opts: {
   seed: number;
-  playerFaction: Faction;
-  playerArmy: ArmyLoadout;
-  enemyArmy: ArmyLoadout;
-  mode: PlayMode;
-  first: Faction;
+  playerFaction?: Faction;
+  playerArmy?: ArmyLoadout;
+  enemyArmy?: ArmyLoadout;
+  mode?: PlayMode;
+  first?: Faction;
   mapSize?: MapSize;
+  participants?: Participant[];
+  localPlayerId?: string;
+  teamOrder?: number[];
 }): BattleState {
+  const playerFaction = opts.playerFaction ?? "empire";
+  const enemyFaction: Faction = playerFaction === "empire" ? "brood" : "empire";
+  const participants =
+    opts.participants?.filter(playable) ??
+    ([
+      {
+        id: "p-host",
+        kind: "human" as const,
+        name: "You",
+        faction: playerFaction,
+        team: 1,
+        color: 0,
+        army: opts.playerArmy ?? { captain: 1, soldier: 2 },
+        ready: true,
+        host: true,
+      },
+      {
+        id: "p-ai",
+        kind: "ai" as const,
+        name: "Opponent",
+        faction: enemyFaction,
+        team: 2,
+        color: 1,
+        army: opts.enemyArmy ?? defaultEnemyArmy(enemyFaction, 100),
+        ready: true,
+        host: false,
+      },
+    ] satisfies Participant[]);
+  const teams = [...new Set(participants.map((p) => p.team))];
+  const teamOrder =
+    opts.teamOrder && opts.teamOrder.length
+      ? opts.teamOrder
+      : opts.first
+        ? opts.first === enemyFaction
+          ? [2, 1].filter((t) => teams.includes(t)).concat(teams.filter((t) => t !== 1 && t !== 2))
+          : [1, 2].filter((t) => teams.includes(t)).concat(teams.filter((t) => t !== 1 && t !== 2))
+        : shuffleTeams(teams, opts.seed);
+  const localPlayerId = opts.localPlayerId ?? participants.find((p) => p.kind === "human")?.id ?? participants[0].id;
+  const local = participants.find((p) => p.id === localPlayerId) ?? participants[0];
   const map = generateMap(opts.seed, opts.mapSize ?? "medium");
-  const enemyFaction: Faction = opts.playerFaction === "empire" ? "brood" : "empire";
   const taken = new Set<string>();
-  const playerUnits = placeArmy(
-    expandLoadout(opts.playerArmy, opts.playerFaction),
-    opts.playerFaction,
-    map,
-    taken,
-    opts.playerFaction === "empire" ? 0 : Math.PI,
-  );
-  const enemyUnits = placeArmy(
-    expandLoadout(opts.enemyArmy, enemyFaction),
-    enemyFaction,
-    map,
-    taken,
-    enemyFaction === "empire" ? 0 : Math.PI,
-  );
-  const units = markEngaged([...playerUnits, ...enemyUnits]);
-  const firstName = opts.first === "empire" ? "Galactic Empire" : "Brood Swarm";
+  const units: UnitState[] = [];
+  const grouped = new Map<number, Participant[]>();
+  for (const p of participants) {
+    const list = grouped.get(p.team) ?? [];
+    list.push(p);
+    grouped.set(p.team, list);
+  }
+  const teamList = [...grouped.keys()];
+  for (const team of teamList) {
+    const members = grouped.get(team) ?? [];
+    const pocket = teamDeployTiles(map, teamList.indexOf(team), teamList.length, taken);
+    for (const member of members) {
+      const placed = placeArmy(
+        expandLoadout(member.army, member.faction),
+        member,
+        map,
+        taken,
+        pocket.spots,
+        pocket.facing,
+      );
+      units.push(...placed);
+    }
+  }
+  const firstTeam = teamOrder[0] ?? teams[0];
+  const firstPart = participants.find((p) => p.team === firstTeam);
+  const firstFaction = firstPart?.faction ?? playerFaction;
+  const localOnFirst = local.team === firstTeam;
   const state: BattleState = {
     version: SAVE_VERSION,
     map,
-    units,
-    turn: opts.first,
+    units: markEngaged(units),
+    turn: firstFaction,
+    turnTeam: firstTeam,
+    teamOrder,
+    participants,
+    playerId: local.id,
     round: 1,
-    phase: opts.mode === "single" && opts.first !== opts.playerFaction ? "enemyTurn" : "select",
+    phase: localOnFirst ? "select" : "enemyTurn",
     selectedId: null,
     hoverCol: null,
     hoverRow: null,
     pendingMove: null,
     pendingShot: null,
     moveProgress: 0,
-    log: [log(`${firstName} has the opening volley.`, opts.first)],
+    log: [log(`Team ${firstTeam} has the opening volley.`, firstFaction)],
     winner: null,
-    playerFaction: opts.playerFaction,
+    playerFaction: local.faction,
     enemyFaction,
-    mode: opts.mode,
+    mode: opts.mode ?? (participants.some((p) => p.kind === "human" && !p.host) ? "multi" : "single"),
     fx: [],
     explored: emptyMask(map),
     actMode: "move",
@@ -293,36 +344,37 @@ export function defaultEnemyArmy(faction: Faction, points: PointScale): ArmyLoad
   return { tyrant: 2, broodling: 10, spatling: 12 };
 }
 
-function living(state: BattleState, faction: Faction) {
-  return state.units.some((u) => u.alive && u.faction === faction);
+function livingTeams(state: BattleState) {
+  return [...new Set(state.units.filter((u) => u.alive).map((u) => u.team))];
 }
 
-export function activationsDone(state: BattleState, faction = state.turn) {
-  return state.units.filter((u) => u.faction === faction && u.acted).length;
+export function activationsDone(state: BattleState, team = state.turnTeam) {
+  return state.units.filter((u) => u.team === team && u.acted).length;
 }
 
-export function activationsCap(state: BattleState, faction = state.turn) {
-  const n = state.units.filter((u) => u.alive && u.faction === faction).length;
+export function activationsCap(state: BattleState, team = state.turnTeam) {
+  const n = state.units.filter((u) => u.alive && u.team === team).length;
   return Math.min(ACTIVATIONS_PER_TURN, n);
 }
 
 export function turnExhausted(state: BattleState) {
-  if (state.units.some((u) => u.alive && u.faction === state.turn && u.moved && !u.acted)) return false;
+  if (state.units.some((u) => u.alive && u.team === state.turnTeam && u.moved && !u.acted)) return false;
   if (activationsDone(state) >= ACTIVATIONS_PER_TURN) return true;
-  return !state.units.some((u) => u.alive && u.faction === state.turn && !u.acted);
+  return !state.units.some((u) => u.alive && u.team === state.turnTeam && !u.acted);
 }
 
 export function checkWinner(state: BattleState): BattleState {
-  const emp = living(state, "empire");
-  const brd = living(state, "brood");
-  if (emp && brd) return state;
-  const winner = emp && !brd ? "empire" : brd && !emp ? "brood" : "draw";
+  const teams = livingTeams(state);
+  if (teams.length > 1) return state;
+  const winner = teams.length === 1 ? teams[0] : "draw";
+  const local = localParticipant(state);
   const text =
     winner === "draw"
       ? "The field is silent. None remain."
-      : winner === state.playerFaction
+      : local && winner === local.team
         ? "The field is yours."
         : "Your line has broken.";
+  const tone = winner === "draw" ? "danger" : state.units.find((u) => u.team === winner)?.faction ?? "neutral";
   return {
     ...state,
     winner,
@@ -330,14 +382,19 @@ export function checkWinner(state: BattleState): BattleState {
     selectedId: null,
     pendingMove: null,
     pendingShot: null,
-    log: [log(text, winner === "draw" ? "danger" : winner), ...state.log].slice(0, 40),
+    log: [log(text, tone), ...state.log].slice(0, 40),
   };
+}
+
+function teamIsLocal(state: BattleState, team = state.turnTeam) {
+  const me = localParticipant(state);
+  return Boolean(me && me.team === team);
 }
 
 function resumeSide(state: BattleState): BattleState {
   if (state.winner) return state;
   if (turnExhausted(state)) return endTurn(state);
-  if (state.mode === "single" && state.turn !== state.playerFaction) {
+  if (!teamIsLocal(state)) {
     return { ...state, phase: "enemyTurn", selectedId: null, pendingMove: null, pendingShot: null };
   }
   return { ...state, phase: state.phase === "act" ? "act" : "select", selectedId: state.selectedId };
@@ -345,7 +402,12 @@ function resumeSide(state: BattleState): BattleState {
 
 export function readyUnits(state: BattleState) {
   if (activationsDone(state) >= ACTIVATIONS_PER_TURN) return [];
-  return state.units.filter((u) => u.alive && u.faction === state.turn && !u.moved && !u.acted);
+  const me = localParticipant(state);
+  return state.units.filter((u) => {
+    if (!u.alive || u.team !== state.turnTeam || u.moved || u.acted) return false;
+    if (me && u.playerId !== me.id) return false;
+    return true;
+  });
 }
 
 export function unitById(state: BattleState, id: string | null) {
@@ -357,20 +419,21 @@ export function canControl(state: BattleState) {
     return false;
   }
   if (state.phase === "gameOver") return false;
-  if (state.mode === "single" && state.turn !== state.playerFaction) return false;
-  return true;
+  return teamIsLocal(state);
 }
 
 export function whyImmobile(state: BattleState, unit: UnitState): string | null {
   if (!unit.alive) return "This unit has fallen.";
   if (state.phase === "gameOver") return "The engagement is over.";
-  if (unit.faction !== state.turn) return "It is not this unit's turn.";
+  if (unit.team !== state.turnTeam) return "It is not this unit's turn.";
+  const me = localParticipant(state);
+  if (me && unit.playerId !== me.id) return "That unit belongs to another commander.";
   if (unit.acted) return "This unit has already completed its activation.";
   if (activationsDone(state) >= ACTIVATIONS_PER_TURN && !unit.moved) {
     return "This side has spent its five activations.";
   }
   if (unit.moved && !unit.acted) return "Already moved — it may still fire or strike.";
-  if (state.phase === "enemyTurn") return "The opposing force is acting.";
+  if (state.phase === "enemyTurn") return "Another team is acting.";
   return null;
 }
 
@@ -391,7 +454,7 @@ export function selectUnit(state: BattleState, id: string): BattleState {
   ) {
     return { ...state, selectedId: id };
   }
-  if (unit.faction !== state.turn) {
+  if (unit.team !== state.turnTeam || (localParticipant(state)?.id && unit.playerId !== localParticipant(state)?.id)) {
     return { ...state, selectedId: id, phase: "select", pendingMove: null, actMode: "move" };
   }
   if (unit.moved && !unit.acted) {
@@ -611,13 +674,16 @@ export function beginShoot(state: BattleState): BattleState {
 }
 
 export function confirmShoot(state: BattleState, targetId: string): BattleState {
-  if (!canControl(state)) return state;
   const unit = unitById(state, state.selectedId);
   const target = unitById(state, targetId);
   if (!unit || !target || !unit.alive || !target.alive) return state;
-  if (unit.faction !== state.turn) return state;
-  if (unit.faction === target.faction) return state;
+  if (unit.team !== state.turnTeam || unit.team === target.team) return state;
   if (unit.acted) return state;
+  if (state.phase === "gameOver" || state.phase === "moving" || state.phase === "resolving") return state;
+  if (state.phase === "enemyTurn") {
+    const owner = state.participants.find((p) => p.id === unit.playerId);
+    if (owner?.kind !== "ai") return state;
+  } else if (!canControl(state)) return state;
   const ids = shotVictims(unit, target, state.units, state.map);
   const victims = ids.map((id) => unitById(state, id)).filter((u): u is UnitState => !!u);
   return {
@@ -629,10 +695,14 @@ export function confirmShoot(state: BattleState, targetId: string): BattleState 
 }
 
 export function confirmMelee(state: BattleState, targetId: string): BattleState {
-  if (!canControl(state)) return state;
   const unit = unitById(state, state.selectedId);
   const target = unitById(state, targetId);
-  if (!unit || !target || unit.faction !== state.turn || unit.faction === target.faction) return state;
+  if (!unit || !target) return state;
+  if (unit.team !== state.turnTeam || unit.team === target.team) return state;
+  if (state.phase === "enemyTurn") {
+    const owner = state.participants.find((p) => p.id === unit.playerId);
+    if (owner?.kind !== "ai") return state;
+  } else if (!canControl(state)) return state;
   return {
     ...state,
     phase: "resolving",
@@ -699,8 +769,15 @@ export function waitUnit(state: BattleState): BattleState {
 }
 
 export function endTurn(state: BattleState): BattleState {
-  const nextTurn: Faction = state.turn === "empire" ? "brood" : "empire";
-  const finishing = state.turn;
+  const finishing = state.turnTeam;
+  const order = (state.teamOrder.length ? state.teamOrder : livingTeams(state)).filter((t) =>
+    state.units.some((u) => u.alive && u.team === t),
+  );
+  const idx = Math.max(0, order.indexOf(finishing));
+  const nextIdx = order.length ? (idx + 1) % order.length : 0;
+  const nextTeam = order[nextIdx] ?? finishing;
+  const wrapped = nextIdx === 0;
+  const nextFaction = state.participants.find((p) => p.team === nextTeam)?.faction ?? state.turn;
   const units = markEngaged(
     state.units.map((u) => {
       const stealth = UNIT_STATS[u.type].stealth;
@@ -711,25 +788,24 @@ export function endTurn(state: BattleState): BattleState {
         acted: false,
         shotThisTurn: false,
         turnsSinceShot,
-        overwatchedThisTurn: u.faction === finishing ? false : u.overwatchedThisTurn,
+        overwatchedThisTurn: u.team === finishing ? false : u.overwatchedThisTurn,
         revealed: stealth ? (u.shotThisTurn ? true : turnsSinceShot < 1) : false,
       };
     }),
   );
-  const name = nextTurn === "empire" ? "Galactic Empire" : "Brood Swarm";
-  const enemyPhase =
-    state.mode === "single" && nextTurn !== state.playerFaction ? "enemyTurn" : "select";
+  const enemyPhase = teamIsLocal({ ...state, turnTeam: nextTeam }) ? "select" : "enemyTurn";
   return {
     ...state,
     units,
-    turn: nextTurn,
-    round: nextTurn === "empire" ? state.round + 1 : state.round,
+    turn: nextFaction,
+    turnTeam: nextTeam,
+    round: wrapped ? state.round + 1 : state.round,
     phase: enemyPhase,
     selectedId: null,
     pendingMove: null,
     pendingShot: null,
     actMode: "move",
-    log: [log(`${name} — five activations.`, nextTurn), ...state.log].slice(0, 40),
+    log: [log(`Team ${nextTeam} — five activations.`, nextFaction), ...state.log].slice(0, 40),
   };
 }
 
@@ -745,11 +821,11 @@ export function applyAiIntent(state: BattleState): BattleState {
     return resumeSide({ ...state, units, selectedId: null, phase: "select" });
   }
   if (intent.kind === "shoot") {
-    const withSel = { ...state, selectedId: intent.unitId, phase: "act" as const };
+    const withSel = { ...state, selectedId: intent.unitId };
     return confirmShoot(withSel, intent.targetId);
   }
   if (intent.kind === "melee") {
-    const withSel = { ...state, selectedId: intent.unitId, phase: "act" as const };
+    const withSel = { ...state, selectedId: intent.unitId };
     return confirmMelee(withSel, intent.targetId);
   }
   const unit = unitById(state, intent.unitId);

@@ -113,8 +113,7 @@ export function generateMap(seed: number, size: MapSize = "medium"): BattleMap {
   const scale = (cols * rows) / (MAP_COLS * MAP_ROWS);
 
   const place = (c: number, r: number, kind: TileKind) => {
-    if (c < 3 || c >= cols - 3) return;
-    if (r < 0 || r >= rows || c < 0 || c >= cols) return;
+    if (c < 3 || c >= cols - 3 || r < 3 || r >= rows - 3) return;
     tiles[idx(c, r, cols)] = kind;
   };
 
@@ -163,4 +162,56 @@ export function openDeployTiles(
     }
   }
   return spots;
+}
+
+function angleOnRect(t: number, cols: number, rows: number) {
+  const w = cols - 1;
+  const h = rows - 1;
+  const peri = 2 * (w + h);
+  let d = ((t % 1) + 1) % 1 * peri;
+  if (d < w) return { col: d, row: 0 };
+  d -= w;
+  if (d < h) return { col: w, row: d };
+  d -= h;
+  if (d < w) return { col: w - d, row: h };
+  d -= w;
+  return { col: 0, row: h - d };
+}
+
+/** Open tiles in a 3-deep pocket around a team's edge anchor, facing the center. */
+export function teamDeployTiles(
+  map: BattleMap,
+  teamIndex: number,
+  teamCount: number,
+  taken: Set<string>,
+) {
+  const n = Math.max(1, teamCount);
+  const t = (teamIndex + 0.5) / n;
+  const anchor = angleOnRect(t, map.cols, map.rows);
+  const cx = (map.cols - 1) / 2;
+  const cy = (map.rows - 1) / 2;
+  const facing = Math.atan2(cy - anchor.row, cx - anchor.col);
+  const spots: Array<{ col: number; row: number; facing: number }> = [];
+  for (let col = 0; col < map.cols; col++) {
+    for (let row = 0; row < map.rows; row++) {
+      if (isBlocked(map, col, row)) continue;
+      const key = `${col},${row}`;
+      if (taken.has(key)) continue;
+      const edge = Math.min(col, row, map.cols - 1 - col, map.rows - 1 - row);
+      if (edge > 2.6) continue;
+      const dx = col - cx;
+      const dy = row - cy;
+      let a = Math.atan2(dy, dx) - Math.atan2(anchor.row - cy, anchor.col - cx);
+      while (a > Math.PI) a -= Math.PI * 2;
+      while (a < -Math.PI) a += Math.PI * 2;
+      if (Math.abs(a) > Math.PI / n + 0.15) continue;
+      spots.push({ col, row, facing });
+    }
+  }
+  spots.sort((a, b) => {
+    const da = Math.hypot(a.col - anchor.col, a.row - anchor.row);
+    const db = Math.hypot(b.col - anchor.col, b.row - anchor.row);
+    return da - db;
+  });
+  return { spots, facing };
 }

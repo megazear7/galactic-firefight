@@ -2,7 +2,7 @@ import { Flag, Pause, SkipForward, Swords, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { actOptions, useGame } from "@/game/store";
 import { UNIT_STATS, FACTION_NAME, SPRITE_SRC } from "@/game/units";
-import { activationsCap, activationsDone, whyImmobile } from "@/game/battle";
+import { activationsCap, activationsDone, localParticipant, whyImmobile } from "@/game/battle";
 import { Minimap } from "./Minimap";
 import { cn } from "@/lib/utils";
 import type { BattleState, UnitState, UnitStats } from "@/game/types";
@@ -22,7 +22,7 @@ function UnitActions({
   const melee = useGame((s) => s.melee);
   const confirmFacing = useGame((s) => s.confirmFacing);
   const opts = actOptions(battle, selected);
-  if (!yours || selected.faction !== battle.playerFaction) return null;
+  if (!yours || selected.playerId !== battle.playerId) return null;
   return (
     <div className="mt-auto flex flex-wrap items-center gap-1.5 sm:gap-2">
       {!selected.acted && (
@@ -146,12 +146,13 @@ export function Hud() {
 
   const selected = battle.units.find((u) => u.id === battle.selectedId) ?? null;
   const stats = selected ? UNIT_STATS[selected.type] : null;
-  const yours = battle.turn === battle.playerFaction;
+  const me = localParticipant(battle);
+  const yours = Boolean(me && battle.turnTeam === me.team);
   const over = battle.phase === "gameOver";
   const used = activationsDone(battle);
   const cap = activationsCap(battle);
   const showCard = Boolean(
-    selected && stats && !over && selected.faction === battle.playerFaction,
+    selected && stats && !over && selected.playerId === battle.playerId,
   );
 
   return (
@@ -159,13 +160,13 @@ export function Hud() {
       <header className="flex items-start justify-between gap-2 p-2 pt-[max(0.5rem,env(safe-area-inset-top))] sm:gap-3 sm:p-4">
         <div className="pointer-events-auto rounded-[var(--radius-md)] border border-border bg-bg-elevated/90 px-2 py-1 backdrop-blur-sm sm:rounded-[var(--radius-lg)] sm:px-3 sm:py-2">
           <p className="font-display text-xs font-medium uppercase tracking-widest text-muted sm:hidden">
-            {used}/{cap} · {FACTION_NAME[battle.turn]}
+            {used}/{cap} · Team {battle.turnTeam}
           </p>
           <div className="hidden sm:block">
             <p className="font-display text-xs uppercase tracking-widest text-muted">
               Round {battle.round} · {used}/{cap} activations
             </p>
-            <p className="font-display text-lg font-semibold leading-tight">{FACTION_NAME[battle.turn]}</p>
+            <p className="font-display text-lg font-semibold leading-tight">Team {battle.turnTeam}</p>
             <p className="text-xs text-subtle">
               {yours
                 ? "WASD pan · click-drag to face · or click twice"
@@ -198,10 +199,10 @@ export function Hud() {
       {over && (
         <div className="pointer-events-auto mx-auto mb-8 w-[min(92vw,420px)] rounded-[var(--radius-xl)] border border-border bg-surface p-6 text-center shadow-[var(--shadow-panel)]">
           <p className="font-display text-3xl font-semibold tracking-tight">
-            {battle.winner === battle.playerFaction ? "Field secured" : battle.winner === "draw" ? "Mutual ruin" : "Line broken"}
+            {battle.winner === me?.team ? "Field secured" : battle.winner === "draw" ? "Mutual ruin" : "Line broken"}
           </p>
           <p className="mt-2 text-sm text-muted">
-            {battle.winner === battle.playerFaction
+            {battle.winner === me?.team
               ? "The last opposing unit is down."
               : "Gather what remains. The swarm — or the empire — will return."}
           </p>

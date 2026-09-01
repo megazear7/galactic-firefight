@@ -3,6 +3,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Hud } from "@/components/game/Hud";
 import { ArmyBuilder } from "@/components/menu/ArmyBuilder";
 import { JoinScreen } from "@/components/menu/JoinScreen";
+import { LobbyScreen } from "@/components/menu/LobbyScreen";
+import { BrowseScreen } from "@/components/menu/BrowseScreen";
 import { MainMenu } from "@/components/menu/MainMenu";
 import { ResumeScreen } from "@/components/menu/ResumeScreen";
 import { SettingsPanel } from "@/components/menu/SettingsPanel";
@@ -44,7 +46,9 @@ function Home() {
   return (
     <div className="relative min-h-dvh bg-bg text-fg">
       {screen === "menu" && <MainMenu />}
-      {screen === "setup" && <SetupScreen />}
+      {(screen === "setup" || screen === "create") && <SetupScreen />}
+      {screen === "lobby" && <LobbyScreen />}
+      {screen === "browse" && <BrowseScreen />}
       {screen === "army" && <ArmyBuilder />}
       {screen === "resume" && <ResumeScreen />}
       {screen === "join" && <JoinScreen />}

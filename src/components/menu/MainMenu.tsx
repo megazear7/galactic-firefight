@@ -69,24 +69,14 @@ export function MainMenu() {
               size="lg"
               onClick={() => {
                 unlockAudio(settings);
-                startSetup("single");
+                startSetup();
               }}
             >
-              Single player
+              Create game
             </Button>
-            <Button
-              size="lg"
-              variant="secondary"
-              disabled={!identity.isAuthenticated}
-              onClick={() => startSetup("multi")}
-            >
-              Multiplayer
+            <Button size="lg" variant="secondary" onClick={() => setScreen("browse")}>
+              Browse games
             </Button>
-            {!identity.isAuthenticated && (
-              <p className="text-xs text-subtle">
-                Sign in with Megazear identity to invite a friend. Guest play stays on this device.
-              </p>
-            )}
             <Button
               size="lg"
               variant="outline"

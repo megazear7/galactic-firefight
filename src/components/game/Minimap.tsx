@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { TILE, tileToWorld, worldToPoint } from "@/game/map";
 import { useGame } from "@/game/store";
-import { enemyVisible, visionMask } from "@/game/vision";
+import { enemyVisible, localTeam, visionMask } from "@/game/vision";
 
 const W = 196;
 const H = 148;
@@ -20,7 +20,7 @@ export function Minimap() {
     const ctx = el.getContext("2d");
     if (!ctx) return;
     const { map } = battle;
-    const vis = visionMask(battle, battle.playerFaction);
+    const vis = visionMask(battle, localTeam(battle));
     const scaleX = (W - PAD * 2) / map.cols;
     const scaleY = (H - PAD * 2) / map.rows;
     ctx.fillStyle = "#07080a";
@@ -43,7 +43,7 @@ export function Minimap() {
     }
     for (const u of battle.units) {
       if (!u.alive) continue;
-      const friendly = u.faction === battle.playerFaction;
+      const friendly = u.team === localTeam(battle);
       if (!friendly && !enemyVisible(battle, u, vis)) continue;
       ctx.fillStyle = friendly ? "#6fbf7a" : "#c45c4a";
       ctx.beginPath();

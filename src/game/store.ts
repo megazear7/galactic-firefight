@@ -24,12 +24,15 @@ import { meleeEnemies, rangedTargets } from "./combat";
 import { sfx, unlockAudio, applyVolumes } from "./audio";
 import {
   getSharedGame,
+  grantGuestAcl,
   loadSettings,
   newGameId,
   putHostLobby,
   putSharedGame,
+  removePublicLobby,
   saveGame,
   saveSettings,
+  upsertPublicLobby,
   type MpLobby,
 } from "./persistence";
 import type {
@@ -37,17 +40,36 @@ import type {
   BattleState,
   Faction,
   GameRecord,
+  GameVisibility,
   MapSize,
+  Participant,
   PlayMode,
   PointScale,
+  PublicListing,
   Settings,
+  SlotKind,
   UnitState,
 } from "./types";
 import { DEFAULT_SETTINGS } from "./types";
 import { defaultLoadout } from "./units";
 import type { UserDataClient } from "@/lib/identity/megazear-users";
+import {
+  canAddSlot,
+  claimInviteSlot,
+  claimOpenSlot,
+  defaultMatch,
+  humansReady,
+  makeParticipant,
+  nextColor,
+  nextTeam,
+  passcodeOk,
+  playable,
+  shuffleTeams,
+  slotCap,
+} from "./lobby";
+import { localParticipant } from "./battle";
 
-export type Screen = "menu" | "setup" | "army" | "battle" | "resume" | "join";
+export type Screen = "menu" | "create" | "lobby" | "browse" | "setup" | "army" | "battle" | "resume" | "join";
 
 type Store = {
   screen: Screen;
@@ -65,6 +87,11 @@ type Store = {
   camFocus: { x: number; z: number; seq: number } | null;
   camView: { x: number; z: number; w: number; h: number } | null;
   inviteEmail: string;
+  gameName: string;
+  passcode: string;
+  visibility: GameVisibility;
+  participants: Participant[];
+  joinPasscode: string;
   joinHostId: string | null;
   joinGameId: string | null;
   statusMessage: string | null;
@@ -73,12 +100,22 @@ type Store = {
   setScreen: (s: Screen) => void;
   setSettingsOpen: (v: boolean) => void;
   patchSettings: (p: Partial<Settings>) => void;
-  startSetup: (mode: PlayMode) => void;
+  startSetup: (mode?: PlayMode) => void;
   setPoints: (p: PointScale) => void;
   setMapSize: (s: MapSize) => void;
   setFaction: (f: Faction) => void;
   setArmy: (a: ArmyLoadout) => void;
   setInviteEmail: (v: string) => void;
+  setGameName: (v: string) => void;
+  setPasscode: (v: string) => void;
+  setVisibility: (v: GameVisibility) => void;
+  confirmCreate: (user?: { id?: string; name?: string; email?: string } | null) => void;
+  addSlot: (kind: SlotKind, email?: string) => void;
+  removeSlot: (id: string) => void;
+  patchParticipant: (id: string, patch: Partial<Participant>) => void;
+  toggleReady: (id: string) => void;
+  startMatch: () => void;
+  joinListing: (listing: PublicListing, passcode: string, user?: { id?: string; name?: string; email?: string } | null) => string | null;
   beginBattle: (opts?: { enemyArmy?: ArmyLoadout; first?: Faction }) => void;
   loadRecord: (g: GameRecord) => void;
   select: (id: string) => void;
@@ -111,6 +148,10 @@ function blankRecord(partial: Partial<GameRecord>): GameRecord {
     mode: "single",
     points: 100,
     mapSize: "medium",
+    visibility: "private",
+    participants: [],
+    teamOrder: [],
+    playerId: "p-host",
     playerFaction: "empire",
     seed: (Math.random() * 1e9) | 0,
     battle: null,
@@ -134,6 +175,11 @@ export const useGame = create<Store>((set, get) => ({
   camFocus: null,
   camView: null,
   inviteEmail: "",
+  gameName: "Firefight",
+  passcode: "",
+  visibility: "private",
+  participants: [],
+  joinPasscode: "",
   joinHostId: null,
   joinGameId: null,
   statusMessage: null,
@@ -147,18 +193,22 @@ export const useGame = create<Store>((set, get) => ({
     applyVolumes(settings);
     set({ settings });
   },
-  startSetup: (mode) => {
+  startSetup: (mode = "single") => {
     unlockAudio(get().settings);
     sfx.ui();
     const faction = get().faction;
     const points = get().points;
     set({
       mode,
-      screen: "setup",
+      screen: "create",
       army: defaultLoadout(faction, points),
       record: null,
       battle: null,
       statusMessage: null,
+      gameName: "Firefight",
+      passcode: "",
+      visibility: "private",
+      participants: [],
     });
   },
   setPoints: (points) => {
@@ -175,7 +225,164 @@ export const useGame = create<Store>((set, get) => ({
   },
   setArmy: (army) => set({ army }),
   setInviteEmail: (inviteEmail) => set({ inviteEmail }),
+  setGameName: (gameName) => set({ gameName }),
+  setPasscode: (passcode) => set({ passcode }),
+  setVisibility: (visibility) => {
+    sfx.ui();
+    set({ visibility });
+  },
+  confirmCreate: (user) => {
+    const { points, mapSize, gameName, passcode, visibility, faction } = get();
+    const participants = defaultMatch(points, {
+      name: user?.name || user?.email || "You",
+      userId: user?.id,
+      email: user?.email,
+    }).map((p) => (p.host ? { ...p, faction, army: defaultLoadout(faction, points) } : { ...p, army: defaultLoadout(p.faction, points) }));
+    const rec = blankRecord({
+      name: gameName.trim() || "Firefight",
+      points,
+      mapSize,
+      visibility,
+      passcode: passcode.trim() || undefined,
+      participants,
+      playerId: participants[0].id,
+      playerFaction: participants[0].faction,
+      hostId: user?.id,
+      hostEmail: user?.email,
+      status: "lobby",
+      mode: visibility === "public" || participants.some((p) => p.kind === "open" || p.kind === "invite") ? "multi" : "single",
+    });
+    sfx.confirm();
+    set({ record: rec, participants, screen: "lobby", faction: participants[0].faction, army: participants[0].army });
+    void saveGame(null, rec);
+    void upsertPublicLobby(null, rec);
+  },
+  addSlot: (kind, email) => {
+    const { participants, mapSize, points, visibility } = get();
+    if (!canAddSlot(participants, mapSize)) return;
+    if (kind === "open" && visibility !== "public") return;
+    sfx.ui();
+    const faction: Faction = participants.length % 2 === 0 ? "empire" : "brood";
+    const slot = makeParticipant({
+      kind,
+      faction,
+      team: nextTeam(participants),
+      color: nextColor(participants.map((p) => p.color)),
+      army: defaultLoadout(faction, points),
+      email: email?.trim() || undefined,
+      name: kind === "invite" ? email?.trim() || "Invite" : kind === "open" ? "Open slot" : "AI",
+      ready: kind === "ai",
+    });
+    const next = [...participants, slot];
+    const rec = get().record ? { ...get().record!, participants: next, updatedAt: new Date().toISOString() } : get().record;
+    set({ participants: next, record: rec });
+    if (rec) {
+      void saveGame(null, rec);
+      void upsertPublicLobby(null, rec);
+    }
+  },
+  removeSlot: (id) => {
+    const { participants, record } = get();
+    const target = participants.find((p) => p.id === id);
+    if (!target || target.host) return;
+    sfx.ui();
+    const next = participants.filter((p) => p.id !== id);
+    set({ participants: next, record: record ? { ...record, participants: next } : record });
+  },
+  patchParticipant: (id, patch) => {
+    const { participants, record, points } = get();
+    const next = participants.map((p) => {
+      if (p.id !== id) return p;
+      const merged = { ...p, ...patch };
+      if (patch.faction && patch.faction !== p.faction) {
+        merged.army = defaultLoadout(patch.faction, points);
+        merged.ready = p.kind === "ai";
+      }
+      return merged;
+    });
+    set({ participants: next, record: record ? { ...record, participants: next } : record });
+  },
+  toggleReady: (id) => {
+    const { participants, record } = get();
+    sfx.ui();
+    const next = participants.map((p) => (p.id === id ? { ...p, ready: !p.ready } : p));
+    set({ participants: next, record: record ? { ...record, participants: next } : record });
+  },
+  startMatch: () => {
+    const { record, participants, points, mapSize, mode } = get();
+    if (!humansReady(participants)) return;
+    const play = participants.filter(playable);
+    if (play.length < 2) return;
+    const seed = record?.seed ?? ((Math.random() * 1e9) | 0);
+    const teamOrder = shuffleTeams(play.map((p) => p.team), seed);
+    const localId = record?.playerId ?? play.find((p) => p.host)?.id ?? play[0].id;
+    const battle = createBattle({
+      seed,
+      mapSize,
+      participants: play,
+      localPlayerId: localId,
+      teamOrder,
+      mode: play.some((p) => p.kind === "human" && !p.host) ? "multi" : "single",
+    });
+    const rec = {
+      ...(record ?? blankRecord({})),
+      participants,
+      teamOrder,
+      battle,
+      status: "active" as const,
+      seed,
+      mode: battle.mode,
+      playerId: localId,
+      playerFaction: battle.playerFaction,
+    };
+    sfx.confirm();
+    set({ battle, record: rec, screen: "battle", participants });
+    void saveGame(null, rec);
+    void removePublicLobby(null, rec.id);
+  },
+  joinListing: (listing, code, user) => {
+    const recs = typeof window === "undefined" ? [] : [];
+    const record = get().record;
+    // Prefer the matching local save
+    const local = record?.id === listing.id ? record : null;
+    let game = local;
+    if (!game) {
+      try {
+        const raw = localStorage.getItem("gff.games.v1");
+        const parsed = raw ? (JSON.parse(raw) as { games?: GameRecord[] }) : { games: [] };
+        game = (parsed.games ?? []).find((g) => g.id === listing.id) ?? null;
+      } catch {
+        game = null;
+      }
+    }
+    if (!game) return "Could not find that game on this device. Ask the host for an invite link.";
+    if (game.status !== "lobby") return "That game has already started.";
+    if (!passcodeOk(game.passcode, code)) return "Wrong pass code.";
+    const claimed = claimOpenSlot(
+      game.participants,
+      {
+        id: user?.id ?? `guest-${Date.now().toString(36)}`,
+        name: user?.name || user?.email || "Guest",
+        userId: user?.id,
+        email: user?.email,
+      },
+      game.points,
+    );
+    if (!claimed) return "No open slots.";
+    const playerId = claimed.find((p) => p.userId === user?.id || p.name === (user?.name || user?.email || "Guest"))?.id;
+    const next = { ...game, participants: claimed, playerId: playerId ?? game.playerId, status: "lobby" as const };
+    sfx.confirm();
+    set({ record: next, participants: claimed, screen: "lobby", points: next.points, mapSize: next.mapSize, visibility: next.visibility, gameName: next.name });
+    void saveGame(null, next);
+    void upsertPublicLobby(null, next);
+    return null;
+  },
   beginBattle: (opts) => {
+    const { participants } = get();
+    if (participants.filter(playable).length >= 2) {
+      get().startMatch();
+      return;
+    }
     unlockAudio(get().settings);
     const { faction, army, points, mapSize, mode, record } = get();
     const enemyFaction: Faction = faction === "empire" ? "brood" : "empire";
@@ -217,6 +424,10 @@ export const useGame = create<Store>((set, get) => ({
       mode: g.mode,
       points: g.points,
       mapSize: g.mapSize ?? "medium",
+      visibility: g.visibility ?? "private",
+      participants: g.participants ?? [],
+      gameName: g.name,
+      passcode: g.passcode ?? "",
       faction: g.playerFaction,
       army: g.playerFaction === "empire" || g.playerFaction === "brood" ? get().army : get().army,
       screen: g.battle ? "battle" : "army",
@@ -331,7 +542,8 @@ export const useGame = create<Store>((set, get) => ({
       resolveTimer -= dt;
       if (resolveTimer <= 0) {
         const next = resolveShot(battle);
-        if (next.winner === next.playerFaction) sfx.win();
+        const me = localParticipant(next);
+        if (next.winner === me?.team) sfx.win();
         else if (next.winner) sfx.lose();
         else sfx.hit();
         set({ battle: next, resolveTimer: 0, aiTimer: next.phase === "enemyTurn" ? 0.5 : 0 });
@@ -376,7 +588,7 @@ export const useGame = create<Store>((set, get) => ({
     const { record, battle } = get();
     if (!record || !battle) return;
     const status: GameRecord["status"] =
-      battle.winner === record.playerFaction
+      battle.winner === (record.participants.find((p) => p.id === record.playerId)?.team ?? 1)
         ? "victory"
         : battle.winner
           ? "defeat"

@@ -11,7 +11,7 @@ import {
   readHostLobby,
   type MpLobby,
 } from "@/game/persistence";
-import { createBattle, defaultEnemyArmy } from "@/game/battle";
+import { claimInviteSlot, claimOpenSlot } from "@/game/lobby";
 import { cn } from "@/lib/utils";
 
 export function JoinScreen() {
@@ -55,35 +55,33 @@ export function JoinScreen() {
         setError("The host save is not reachable yet. Ask them to admit your email, then retry.");
         return;
       }
-      const hostFaction = existing.hostFaction ?? existing.playerFaction;
-      const guestFaction: Faction = hostFaction === "empire" ? "brood" : "empire";
-      const first = Math.random() < 0.5 ? "empire" : "brood";
-      const battle = createBattle({
-        seed: existing.seed,
-        playerFaction: guestFaction,
-        playerArmy: army,
-        enemyArmy: existing.hostArmy ?? defaultEnemyArmy(hostFaction, existing.points),
-        mode: "multi",
-        first,
-        mapSize: existing.mapSize ?? lobby?.mapSize ?? "medium",
-      });
-      battle.playerFaction = guestFaction;
-      const next = {
-        ...existing,
-        guestId: identity.user.id,
-        guestEmail: identity.user.email,
-        guestFaction,
-        guestArmy: army,
-        status: "active" as const,
-        battle: { ...battle, playerFaction: guestFaction, mode: "multi" as const },
-      };
+      const claimed =
+        claimInviteSlot(
+          existing.participants ?? [],
+          { name: identity.user.name ?? identity.user.email ?? "Commander", userId: identity.user.id, email: identity.user.email },
+          existing.points,
+        ) ??
+        claimOpenSlot(
+          existing.participants ?? [],
+          { id: identity.user.id, name: identity.user.name ?? identity.user.email ?? "Commander", userId: identity.user.id, email: identity.user.email },
+          existing.points,
+        );
+      if (!claimed) {
+        setError("No open or invite slot matches your account.");
+        return;
+      }
+      const mine = claimed.find((p) => p.userId === identity.user!.id);
+      const next = { ...existing, participants: claimed, playerId: mine?.id ?? existing.playerId, status: "lobby" as const, mode: "multi" as const };
       await putSharedGame(identity.client, hostId, gameId, next);
       useGame.setState({
-        record: { ...next, playerFaction: guestFaction },
-        battle: { ...battle, playerFaction: guestFaction },
-        faction: guestFaction,
-        screen: "battle",
+        record: next,
+        participants: claimed,
+        screen: "lobby",
         mode: "multi",
+        points: next.points,
+        mapSize: next.mapSize,
+        visibility: next.visibility,
+        gameName: next.name,
       });
     } catch {
       setError(
@@ -126,29 +124,7 @@ export function JoinScreen() {
           Host {lobby?.hostName ?? "commander"} · {lobby?.points ?? points} points
         </p>
       </div>
-      <div className="grid gap-3">
-        {(["empire", "brood"] as Faction[]).map((f) => {
-          const taken = lobby?.hostFaction === f;
-          return (
-            <button
-              key={f}
-              type="button"
-              disabled={taken}
-              onClick={() => {
-                setFaction(f);
-                setArmy(defaultLoadout(f, lobby?.points ?? points));
-              }}
-              className={cn(
-                "rounded-[var(--radius-lg)] border p-4 text-left disabled:opacity-40",
-                faction === f ? "border-accent bg-surface-2" : "border-border bg-surface",
-              )}
-            >
-              <p className="font-display text-2xl">{FACTION_NAME[f]}</p>
-              <p className="text-sm text-muted">{taken ? "Held by the host" : FACTION_BLURB[f]}</p>
-            </button>
-          );
-        })}
-      </div>
+      <p className="text-sm text-muted">You'll pick faction, team, color, and army in the lobby after you sit.</p>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       {identity.user?.id && hostId === identity.user.id ? (
         <HostAdmit hostId={hostId} gameId={gameId ?? ""} />
@@ -158,7 +134,7 @@ export function JoinScreen() {
           Menu
         </Button>
         <Button className="flex-1" disabled={busy} onClick={() => void join()}>
-          Confirm and deploy
+          Sit at table
         </Button>
       </div>
     </div>
