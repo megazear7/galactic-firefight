@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   hasLos,
+  hasTerrainLos,
   inArc,
   pickOverwatch,
   sightHorizon,
@@ -11,7 +12,7 @@ import { UNIT_STATS, isFaction, unitSpecials } from "./units.ts";
 import { MAP_SLOT_CAP } from "./types.ts";
 import { findPath, pathCost, blockedAt } from "./pathfinding.ts";
 import { circleHitsTerrain, dist, generateMap, idx, MAP_DIMS } from "./map.ts";
-import { visionMask } from "./vision.ts";
+import { enemyVisible, visionMask } from "./vision.ts";
 import { hasUnitModel, pickModelUrl, unitPose } from "./models.ts";
 import { allGameAssetUrls } from "./preload.ts";
 import type { BattleMap, BattleState, UnitState } from "./types.ts";
@@ -148,6 +149,13 @@ describe("line of sight", () => {
     const body = unit({ id: "body", col: 4, row: 3, type: "soldier" });
     assert.equal(hasLos(map, { col: 1, row: 3 }, { col: 7, row: 3 }, [body], []), false);
     assert.equal(hasLos(map, { col: 1, row: 3 }, { col: 7, row: 3 }, [], []), true);
+  });
+
+  it("does not let unit bodies block spotting", () => {
+    const map = floorMap();
+    const body = unit({ id: "body", col: 4, row: 3, type: "soldier" });
+    assert.equal(hasTerrainLos(map, { col: 1, row: 3 }, { col: 7, row: 3 }), true);
+    assert.equal(hasLos(map, { col: 1, row: 3 }, { col: 7, row: 3 }, [body], [], false), true);
   });
 });
 
@@ -465,6 +473,69 @@ describe("fog of war", () => {
     assert.equal(vis[idx(10, 3, map.cols)], false);
   });
 
+  it("spots a tyrant in the open even though its body is large", () => {
+    const map = floorMap(16, 10);
+    const viewer = unit({ id: "v", col: 2, row: 5, type: "soldier", team: 1 });
+    const tyrant = unit({
+      id: "t",
+      col: 6,
+      row: 5,
+      type: "tyrant",
+      faction: "brood",
+      team: 2,
+      playerId: "p-ai",
+      color: 1,
+    });
+    const state = {
+      map,
+      units: [viewer, tyrant],
+      participants: [],
+      playerId: viewer.playerId,
+    } as unknown as BattleState;
+    const vis = visionMask(state, 1);
+    assert.equal(vis[idx(6, 5, map.cols)], true, "tile under the tyrant is spotted");
+    assert.equal(enemyVisible(state, tyrant, vis), true);
+  });
+
+  it("spots an enemy standing behind another unit, but shots are still blocked", () => {
+    const map = floorMap(16, 10);
+    const viewer = unit({ id: "v", col: 1, row: 5, type: "soldier", team: 1 });
+    const cover = unit({
+      id: "cover",
+      col: 4,
+      row: 5,
+      type: "soldier",
+      faction: "brood",
+      team: 2,
+      playerId: "p-ai",
+      color: 1,
+    });
+    const tyrant = unit({
+      id: "t",
+      col: 7,
+      row: 5,
+      type: "tyrant",
+      faction: "brood",
+      team: 2,
+      playerId: "p-ai",
+      color: 1,
+    });
+    const state = {
+      map,
+      units: [viewer, cover, tyrant],
+      participants: [],
+      playerId: viewer.playerId,
+    } as unknown as BattleState;
+    const vis = visionMask(state, 1);
+    assert.equal(enemyVisible(state, cover, vis), true);
+    assert.equal(enemyVisible(state, tyrant, vis), true);
+    assert.equal(
+      hasLos(map, viewer, tyrant, [viewer, cover, tyrant], [viewer.id, tyrant.id]),
+      false,
+      "the broodling still blocks the shot",
+    );
+  });
+
   it("reveals tiles around the player army and hides the far edge", () => {
     const state = createBattle({
       seed: 11,
@@ -522,7 +593,7 @@ describe("force codex", () => {
 describe("unit models", () => {
   it("uses empire soldier glTF clips and falls back when a unit has none", () => {
     assert.equal(hasUnitModel("soldier", "empire"), true);
-    assert.equal(hasUnitModel("captain", "empire"), false);
+    assert.equal(hasUnitModel("captain", "empire"), true);
     assert.equal(hasUnitModel("soldier", "brood"), false);
     const idle = pickModelUrl("soldier", "empire", "idle", "u-1");
     assert.ok(idle?.endsWith(".glb"));
@@ -536,6 +607,87 @@ describe("unit models", () => {
       "move",
     );
     assert.equal(unitPose({ id: "a", alive: false }, { phase: "select", pendingMove: null, pendingShot: null }), "dead");
+    const soldier = { id: "a", alive: true as const, type: "soldier" as const, faction: "empire" as const };
+    assert.equal(
+      unitPose(soldier, { phase: "resolving", pendingMove: null, pendingShot: { attackerId: "a", kind: "ranged" } }),
+      "reload",
+    );
+    assert.equal(
+      unitPose(soldier, { phase: "resolving", pendingMove: null, pendingShot: { attackerId: "a", kind: "melee" } }),
+      "melee",
+    );
+    assert.match(pickModelUrl("soldier", "empire", "melee", "u-1") ?? "", /empire-soldier-melee-/);
+    const captain = { id: "c", alive: true as const, type: "captain" as const, faction: "empire" as const };
+    assert.equal(
+      unitPose(captain, { phase: "resolving", pendingMove: null, pendingShot: { attackerId: "c", kind: "ranged" } }),
+      "ranged",
+    );
+    assert.equal(
+      unitPose(captain, { phase: "resolving", pendingMove: null, pendingShot: { attackerId: "c", kind: "melee" } }),
+      "melee",
+    );
+    assert.match(pickModelUrl("captain", "empire", "idle_special", "u-1") ?? "", /empire-captain-idle-special-/);
+    assert.match(pickModelUrl("captain", "empire", "ranged", "u-1") ?? "", /empire-captain-ranged-/);
+    assert.equal(hasUnitModel("sniper", "empire"), true);
+    assert.equal(hasUnitModel("machine_gunner", "empire"), true);
+    assert.match(pickModelUrl("machine_gunner", "empire", "move", "u-1") ?? "", /machine-gunner\.glb/);
+    assert.match(pickModelUrl("machine_gunner", "empire", "melee", "u-1") ?? "", /machine-gunner\.glb/);
+    const sniper = { id: "s", alive: true as const, type: "sniper" as const, faction: "empire" as const };
+    assert.equal(
+      unitPose(sniper, { phase: "resolving", pendingMove: null, pendingShot: { attackerId: "s", kind: "ranged" } }),
+      "ranged",
+    );
+    assert.equal(
+      unitPose(sniper, { phase: "resolving", pendingMove: null, pendingShot: { attackerId: "s", kind: "melee" } }),
+      "melee",
+    );
+    assert.match(pickModelUrl("sniper", "empire", "idle_special", "u-1") ?? "", /empire-sniper-idle-special-/);
+    assert.equal(hasUnitModel("broodling", "brood"), true);
+    assert.equal(hasUnitModel("broodling", "empire"), false);
+    const broodling = { id: "b", alive: true as const, type: "broodling" as const, faction: "brood" as const };
+    assert.equal(
+      unitPose(broodling, { phase: "resolving", pendingMove: null, pendingShot: { attackerId: "b", kind: "melee" } }),
+      "melee",
+    );
+    assert.equal(
+      unitPose(broodling, { phase: "resolving", pendingMove: null, pendingShot: { attackerId: "b", kind: "ranged" } }),
+      "idle",
+    );
+    assert.match(pickModelUrl("broodling", "brood", "idle", "u-1") ?? "", /swarm-broodling-idle-/);
+    assert.match(pickModelUrl("broodling", "brood", "move", "u-1") ?? "", /swarm-broodling-move-/);
+    assert.match(pickModelUrl("broodling", "brood", "melee", "u-1") ?? "", /swarm-broodling-melee-/);
+    assert.match(pickModelUrl("broodling", "brood", "dead", "u-1") ?? "", /swarm-broodling-dead-/);
+    assert.equal(hasUnitModel("spatling", "brood"), true);
+    assert.equal(hasUnitModel("spatling", "empire"), false);
+    const spatling = { id: "p", alive: true as const, type: "spatling" as const, faction: "brood" as const };
+    assert.equal(
+      unitPose(spatling, { phase: "resolving", pendingMove: null, pendingShot: { attackerId: "p", kind: "ranged" } }),
+      "ranged",
+    );
+    assert.equal(
+      unitPose(spatling, { phase: "resolving", pendingMove: null, pendingShot: { attackerId: "p", kind: "melee" } }),
+      "idle",
+    );
+    assert.match(pickModelUrl("spatling", "brood", "idle", "u-1") ?? "", /swarm-spatling-idle-/);
+    assert.match(pickModelUrl("spatling", "brood", "move", "u-1") ?? "", /swarm-spatling-move-/);
+    assert.match(pickModelUrl("spatling", "brood", "ranged", "u-1") ?? "", /swarm-spatling-ranged-/);
+    assert.match(pickModelUrl("spatling", "brood", "dead", "u-1") ?? "", /swarm-spatling-dead-/);
+    assert.equal(hasUnitModel("tyrant", "brood"), true);
+    assert.equal(hasUnitModel("tyrant", "empire"), false);
+    const tyrant = { id: "y", alive: true as const, type: "tyrant" as const, faction: "brood" as const };
+    assert.equal(
+      unitPose(tyrant, { phase: "resolving", pendingMove: null, pendingShot: { attackerId: "y", kind: "ranged" } }),
+      "ranged",
+    );
+    assert.equal(
+      unitPose(tyrant, { phase: "resolving", pendingMove: null, pendingShot: { attackerId: "y", kind: "melee" } }),
+      "melee",
+    );
+    assert.match(pickModelUrl("tyrant", "brood", "idle", "u-1") ?? "", /swarm-tyrant-idle-/);
+    assert.match(pickModelUrl("tyrant", "brood", "move", "u-1") ?? "", /swarm-tyrant-move-/);
+    assert.match(pickModelUrl("tyrant", "brood", "melee", "u-1") ?? "", /swarm-tyrant-melee-/);
+    assert.match(pickModelUrl("tyrant", "brood", "ranged", "u-1") ?? "", /swarm-tyrant-ranged-/);
+    assert.match(pickModelUrl("tyrant", "brood", "dead", "u-1") ?? "", /swarm-tyrant-dead-/);
   });
 
   it("preloads audio, models, and sprites before a match", () => {
@@ -544,5 +696,21 @@ describe("unit models", () => {
     assert.ok(urls.some((u) => u.includes("empire-soldier-idle-01.glb")));
     assert.ok(urls.some((u) => u.endsWith("/assets/units/soldier.png")));
     assert.ok(urls.some((u) => u.includes("empire-soldier-ranged-attack-01.mp3")));
+    assert.ok(urls.some((u) => u.includes("empire-soldier-melee-01.glb")));
+    assert.ok(urls.some((u) => u.includes("empire-soldier-reload-01.glb")));
+    assert.ok(urls.some((u) => u.includes("empire-captain-idle-01.glb")));
+    assert.ok(urls.some((u) => u.includes("empire-captain-idle-special-01.glb")));
+    assert.ok(urls.some((u) => u.includes("empire-sniper-idle-01.glb")));
+    assert.ok(urls.some((u) => u.includes("empire-sniper-ranged-01.glb")));
+    assert.ok(urls.some((u) => u.endsWith("/assets/3d/machine-gunner/machine-gunner.glb")));
+    assert.ok(urls.some((u) => u.includes("swarm-broodling-idle-01.glb")));
+    assert.ok(urls.some((u) => u.includes("swarm-broodling-melee-01.glb")));
+    assert.ok(urls.some((u) => u.includes("swarm-broodling-move-01.glb")));
+    assert.ok(urls.some((u) => u.includes("swarm-spatling-idle-01.glb")));
+    assert.ok(urls.some((u) => u.includes("swarm-spatling-ranged-01.glb")));
+    assert.ok(urls.some((u) => u.includes("swarm-spatling-move-01.glb")));
+    assert.ok(urls.some((u) => u.includes("swarm-tyrant-idle-01.glb")));
+    assert.ok(urls.some((u) => u.includes("swarm-tyrant-melee-01.glb")));
+    assert.ok(urls.some((u) => u.includes("swarm-tyrant-ranged-01.glb")));
   });
 });

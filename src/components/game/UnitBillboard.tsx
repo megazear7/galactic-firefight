@@ -1,11 +1,11 @@
-import { Suspense, useLayoutEffect, useMemo, useRef } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { UNIT_STATS, SPRITE_SRC } from "@/game/units";
 import type { UnitState } from "@/game/types";
 import { colorHex } from "@/game/lobby";
 import { UnitModel } from "./UnitModel";
-import { hasUnitModel, unitPose } from "@/game/models";
+import { hasUnitModel, unitPose, type UnitPose } from "@/game/models";
 import { tileToWorld } from "@/game/map";
 import type { BattleMap, BattleState, GraphicsMode } from "@/game/types";
 
@@ -76,7 +76,17 @@ export function UnitVisual({
   const ring = useRef<THREE.Mesh>(null);
   const height = 1.15 * stats.size + (unit.type === "tyrant" ? 0.55 : 0);
   const modeled = graphics !== "sprites" && hasUnitModel(unit.type, unit.faction);
-  const pose = unitPose(unit, battle);
+  const logical = unitPose(unit, battle);
+  const [held, setHeld] = useState<UnitPose | null>(null);
+  useEffect(() => {
+    if (!unit.alive || logical === "move") {
+      setHeld(null);
+      return;
+    }
+    if (logical === "reload" || logical === "ranged" || logical === "melee") setHeld(logical);
+  }, [logical, unit.alive]);
+  const pose = !unit.alive ? "dead" : logical === "move" ? "move" : (held ?? logical);
+  const clearHold = useCallback(() => setHeld(null), []);
   const barY = modeled ? 1.92 * stats.size : height + 0.18;
 
   useLayoutEffect(() => {
@@ -129,6 +139,7 @@ export function UnitVisual({
             pose={pose}
             seed={unit.id}
             facing={unit.facing}
+            onFinished={pose === "reload" || pose === "ranged" || pose === "melee" ? clearHold : undefined}
           />
         </Suspense>
       ) : (

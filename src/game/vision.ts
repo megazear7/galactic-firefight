@@ -1,5 +1,5 @@
 import { clamp, dist, idx, inBounds, isBlocked } from "./map";
-import { hasLos, losRadius } from "./combat";
+import { hasTerrainLos } from "./combat";
 import { sightRange } from "./units";
 import type { BattleMap, BattleState, UnitState } from "./types";
 import { devicePlayers } from "./lobby";
@@ -19,17 +19,6 @@ const TERRAIN_DIRS = [
 
 export function emptyMask(map: BattleMap): boolean[] {
   return Array.from({ length: map.cols * map.rows }, () => false);
-}
-
-function bodyBlocks(col: number, row: number, units: UnitState[], skip: Set<string>) {
-  for (const u of units) {
-    if (!u.alive || skip.has(u.id)) continue;
-    const r = losRadius(u.type);
-    const dx = col - u.col;
-    const dy = row - u.row;
-    if (dx * dx + dy * dy < r * r) return true;
-  }
-  return false;
 }
 
 /** Terrain collision that ignores the obstacle we are trying to see. */
@@ -72,7 +61,6 @@ function inTile(col: number, row: number, tc: number, tr: number, pad: number) {
 function canSeeTerrainFace(
   unit: UnitState,
   map: BattleMap,
-  units: UnitState[],
   col: number,
   row: number,
 ) {
@@ -84,7 +72,6 @@ function canSeeTerrainFace(
   const len = Math.hypot(dx, dy);
   if (len > cap + 0.12) return false;
   if (len < 0.16) return true;
-  const skip = new Set([unit.id]);
   const steps = Math.max(10, Math.ceil(len * 16));
   for (let s = 1; s <= steps; s++) {
     const t = s / steps;
@@ -92,18 +79,17 @@ function canSeeTerrainFace(
     const r = unit.row + dy * t;
     if (inTile(c, r, col, row, 0.04)) return true;
     if (hitsOtherTerrain(map, c, r, 0.07, col, row)) return false;
-    if (t * len > 0.34 && bodyBlocks(c, r, units, skip)) return false;
   }
   return true;
 }
 
-function canSeeTile(unit: UnitState, map: BattleMap, units: UnitState[], col: number, row: number) {
+function canSeeTile(unit: UnitState, map: BattleMap, col: number, row: number) {
   const cap = sightRange(unit.type);
   if (!isBlocked(map, col, row)) {
     if (dist(unit, { col, row }) > cap + 0.55) return false;
-    return hasLos(map, unit, { col, row }, units, [unit.id]);
+    return hasTerrainLos(map, unit, { col, row });
   }
-  return canSeeTerrainFace(unit, map, units, col, row);
+  return canSeeTerrainFace(unit, map, col, row);
 }
 
 function revealTerrainVolume(vis: boolean[], map: BattleMap) {
@@ -158,7 +144,7 @@ export function visionMask(state: BattleState, team: number): boolean[] {
       for (let col = c0; col <= c1; col++) {
         const i = idx(col, row, map.cols);
         if (vis[i]) continue;
-        if (canSeeTile(unit, map, units, col, row)) vis[i] = true;
+        if (canSeeTile(unit, map, col, row)) vis[i] = true;
       }
     }
   }
@@ -189,10 +175,21 @@ export function localTeam(state: BattleState) {
 export function enemyVisible(state: BattleState, unit: UnitState, vis: boolean[]) {
   if (devicePlayers(state.participants ?? []).length >= 2) {
     if (unit.playerId === state.playerId) return true;
-    return tileVisibleNow(vis, state.map, unit.col, unit.row);
+  } else if (unit.team === localTeam(state)) {
+    return true;
   }
-  if (unit.team === localTeam(state)) return true;
-  return tileVisibleNow(vis, state.map, unit.col, unit.row);
+  if (tileVisibleNow(vis, state.map, unit.col, unit.row)) return true;
+  const hotseat = devicePlayers(state.participants ?? []).length >= 2;
+  const viewers = state.units.filter((u) => {
+    if (!u.alive) return false;
+    if (hotseat) return u.playerId === state.playerId;
+    return u.team === localTeam(state);
+  });
+  for (const v of viewers) {
+    if (dist(v, unit) > sightRange(v.type) + 0.55) continue;
+    if (hasTerrainLos(state.map, v, unit)) return true;
+  }
+  return false;
 }
 
 export function revealExplored(state: BattleState): BattleState {

@@ -98,10 +98,14 @@ function CameraRig() {
       const len = Math.hypot(dx, dz) || 1;
       dx = (dx / len) * speed;
       dz = (dz / len) * speed;
-      ctrl.target.x += dx;
-      ctrl.target.z += dz;
-      camera.position.x += dx;
-      camera.position.z += dz;
+      // Map is isometric (camera on +X/+Z). Rotate pan 45° so W is screen-up.
+      const iso = Math.SQRT1_2;
+      const rx = iso * (dx + dz);
+      const rz = iso * (-dx + dz);
+      ctrl.target.x += rx;
+      ctrl.target.z += rz;
+      camera.position.x += rx;
+      camera.position.z += rz;
       ctrl.update();
     }
     const distCam = camera.position.distanceTo(ctrl.target);

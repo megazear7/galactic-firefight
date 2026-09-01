@@ -1,6 +1,8 @@
 import type { BattleState, Faction, UnitType } from "./types";
 
-export type UnitPose = "idle" | "move" | "reload" | "dead";
+export type UnitPose = "idle" | "idle_special" | "move" | "reload" | "ranged" | "melee" | "dead";
+
+export const IDLE_SPECIAL_CHANCE = 0.05;
 
 export type UnitModelSet = {
   /** Extra yaw on top of game facing, in radians. */
@@ -10,40 +12,98 @@ export type UnitModelSet = {
   clips: Record<UnitPose, string[]>;
 };
 
-function numbered(faction: Faction, type: UnitType, pose: string, count: number) {
+function numbered(faction: Faction, type: UnitType, pose: string, count: number, filePrefix?: string) {
   const slug = type.replaceAll("_", "-");
+  const poseSlug = pose.replaceAll("_", "-");
   const folder = `/assets/3d/${slug}`;
+  const head = filePrefix ?? faction;
   return Array.from({ length: count }, (_, i) => {
     const n = String(i + 1).padStart(2, "0");
-    return `${folder}/${faction}-${slug}-${pose}-${n}.glb`;
+    return `${folder}/${head}-${slug}-${poseSlug}-${n}.glb`;
   });
+}
+
+function emptyClips(): Record<UnitPose, string[]> {
+  return {
+    idle: [],
+    idle_special: [],
+    move: [],
+    reload: [],
+    ranged: [],
+    melee: [],
+    dead: [],
+  };
 }
 
 function pack(
   faction: Faction,
   type: UnitType,
   counts: Partial<Record<UnitPose, number>>,
-  extras: Partial<Pick<UnitModelSet, "yawOffset" | "scale">> = {},
+  extras: Partial<Pick<UnitModelSet, "yawOffset" | "scale">> & { filePrefix?: string } = {},
 ): UnitModelSet {
+  const prefix = extras.filePrefix;
   return {
     yawOffset: extras.yawOffset ?? 0,
     scale: extras.scale ?? 1,
     clips: {
-      idle: numbered(faction, type, "idle", counts.idle ?? 0),
-      move: numbered(faction, type, "move", counts.move ?? 0),
-      reload: numbered(faction, type, "reload", counts.reload ?? 0),
-      dead: numbered(faction, type, "dead", counts.dead ?? 0),
+      idle: numbered(faction, type, "idle", counts.idle ?? 0, prefix),
+      idle_special: numbered(faction, type, "idle_special", counts.idle_special ?? 0, prefix),
+      move: numbered(faction, type, "move", counts.move ?? 0, prefix),
+      reload: numbered(faction, type, "reload", counts.reload ?? 0, prefix),
+      ranged: numbered(faction, type, "ranged", counts.ranged ?? 0, prefix),
+      melee: numbered(faction, type, "melee", counts.melee ?? 0, prefix),
+      dead: numbered(faction, type, "dead", counts.dead ?? 0, prefix),
     },
   };
+}
+
+/** One unanimated mesh used for every pose until clips exist. */
+function staticMesh(url: string, extras: Partial<Pick<UnitModelSet, "yawOffset" | "scale">> = {}): UnitModelSet {
+  const clips = emptyClips();
+  clips.idle = [url];
+  return { yawOffset: extras.yawOffset ?? 0, scale: extras.scale ?? 1, clips };
 }
 
 /**
  * Register glTF clips here as they land in `public/assets/3d/{type}/`.
  * File names: `{faction}-{type}-{pose}-NN.glb` (underscores in type become hyphens).
+ * Pass `filePrefix` when the files use a different head than the faction slug.
  */
 const CATALOG: Partial<Record<UnitType, Partial<Record<Faction, UnitModelSet>>>> = {
   soldier: {
-    empire: pack("empire", "soldier", { idle: 3, move: 2, reload: 1, dead: 3 }),
+    empire: pack("empire", "soldier", { idle: 3, move: 2, reload: 1, melee: 1, dead: 3 }),
+  },
+  captain: {
+    empire: pack("empire", "captain", {
+      idle: 2,
+      idle_special: 1,
+      move: 2,
+      ranged: 2,
+      melee: 3,
+      dead: 3,
+    }),
+  },
+  sniper: {
+    empire: pack("empire", "sniper", {
+      idle: 2,
+      idle_special: 1,
+      move: 3,
+      ranged: 2,
+      melee: 1,
+      dead: 2,
+    }),
+  },
+  machine_gunner: {
+    empire: staticMesh("/assets/3d/machine-gunner/machine-gunner.glb"),
+  },
+  broodling: {
+    brood: pack("brood", "broodling", { idle: 5, move: 4, melee: 2, dead: 2 }, { filePrefix: "swarm" }),
+  },
+  spatling: {
+    brood: pack("brood", "spatling", { idle: 2, move: 3, ranged: 2, dead: 2 }, { filePrefix: "swarm" }),
+  },
+  tyrant: {
+    brood: pack("brood", "tyrant", { idle: 1, move: 1, melee: 4, ranged: 1, dead: 1 }, { filePrefix: "swarm" }),
   },
 };
 
@@ -54,6 +114,10 @@ export function unitModelSet(type: UnitType, faction: Faction): UnitModelSet | n
 export function hasUnitModel(type: UnitType, faction: Faction) {
   const set = unitModelSet(type, faction);
   return !!set && set.clips.idle.length > 0;
+}
+
+export function hasClip(type: UnitType, faction: Faction, pose: UnitPose) {
+  return (unitModelSet(type, faction)?.clips[pose]?.length ?? 0) > 0;
 }
 
 function hashSeed(seed: string) {
@@ -71,7 +135,7 @@ export function pickModelUrl(type: UnitType, faction: Faction, pose: UnitPose, s
 }
 
 export function unitPose(
-  unit: { id: string; alive: boolean },
+  unit: { id: string; alive: boolean; type?: UnitType; faction?: Faction },
   battle: {
     phase: BattleState["phase"];
     pendingMove: { unitId: string } | null;
@@ -80,12 +144,13 @@ export function unitPose(
 ): UnitPose {
   if (!unit.alive) return "dead";
   if (battle.phase === "moving" && battle.pendingMove?.unitId === unit.id) return "move";
-  if (
-    battle.phase === "resolving" &&
-    battle.pendingShot?.attackerId === unit.id &&
-    battle.pendingShot.kind !== "melee"
-  ) {
-    return "reload";
+  if (battle.phase === "resolving" && battle.pendingShot?.attackerId === unit.id && unit.type && unit.faction) {
+    if (battle.pendingShot.kind === "melee") {
+      if (hasClip(unit.type, unit.faction, "melee")) return "melee";
+    } else {
+      if (hasClip(unit.type, unit.faction, "ranged")) return "ranged";
+      if (hasClip(unit.type, unit.faction, "reload")) return "reload";
+    }
   }
   return "idle";
 }

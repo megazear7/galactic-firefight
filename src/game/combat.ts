@@ -48,13 +48,14 @@ function unitBlocksSample(
   return false;
 }
 
-/** Sampled line of sight: walls/structures and other unit bodies block. */
+/** Sampled line of sight: walls/structures always block. Unit bodies block shots, not spotting. */
 export function hasLos(
   map: BattleMap,
   a: PathPoint,
   b: PathPoint,
   units: UnitState[] = [],
   exceptIds: string[] = [],
+  blockUnits = true,
 ) {
   const skip = new Set(exceptIds);
   const len = dist(a, b);
@@ -65,6 +66,7 @@ export function hasLos(
     const col = a.col + (b.col - a.col) * t;
     const row = a.row + (b.row - a.row) * t;
     if (circleHitsTerrain(map, col, row, 0.07)) return false;
+    if (!blockUnits) continue;
     const fromA = t * len;
     const fromB = (1 - t) * len;
     if (fromA < 0.34 || fromB < 0.34) continue;
@@ -73,18 +75,21 @@ export function hasLos(
   return true;
 }
 
+export function hasTerrainLos(map: BattleMap, a: PathPoint, b: PathPoint) {
+  return hasLos(map, a, b, [], [], false);
+}
+
 /**
- * Polar horizon of what `unit` can see. Each entry is the first blocked
- * (or max-range) point along that ray — used to build the vis fan.
+ * Polar horizon of what `unit` can see. Terrain blocks; unit bodies do not
+ * (spotting). Each entry is the first blocked or max-range point along that ray.
  */
 export function sightHorizon(
   unit: UnitState,
   map: BattleMap,
-  units: UnitState[],
+  _units: UnitState[],
   maxRange: number,
   rays = 160,
 ): PathPoint[] {
-  const skip = new Set([unit.id]);
   const stats = UNIT_STATS[unit.type];
   const full = stats.arc >= 359;
   const half = ((stats.arc * Math.PI) / 180) / 2;
@@ -103,7 +108,6 @@ export function sightHorizon(
       const col = unit.col + dx * t;
       const row = unit.row + dy * t;
       if (circleHitsTerrain(map, col, row, 0.07)) break;
-      if (t > 0.34 && unitBlocksSample(col, row, units, skip)) break;
       last = { col, row };
     }
     pts.push(last);
