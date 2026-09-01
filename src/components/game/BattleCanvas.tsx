@@ -11,7 +11,8 @@ import { VisibilityOverlay } from "./VisibilityOverlay";
 import { CombatFx } from "./CombatFx";
 import { FogOfWar } from "./FogOfWar";
 import { readyUnits, canControl } from "@/game/battle";
-import { enemyVisible, localTeam, visionMask } from "@/game/vision";
+import { enemyVisible, localTeam, tileExplored, visionMask } from "@/game/vision";
+import { hasUnitModel } from "@/game/models";
 import type { MapControls as MapControlsImpl } from "three-stdlib";
 
 function Loop() {
@@ -306,14 +307,15 @@ function Scene() {
         <VisibilityOverlay unit={selected} map={battle.map} units={battle.units} />
       )}
       {battle.units.map((u) => {
-        if (!u.alive) return null;
-        const hidden = !enemyVisible(battle, u, vis);
+        const modeled = settings.graphics !== "sprites" && hasUnitModel(u.type, u.faction);
+        if (!u.alive && !modeled) return null;
+        const hidden = u.alive ? !enemyVisible(battle, u, vis) : !tileExplored(battle, u.col, u.row);
         return (
           <group
             key={u.id}
             onClick={(e) => {
               e.stopPropagation();
-              if (hidden) return;
+              if (hidden || !u.alive) return;
               if (!canControl(battle)) return;
               if (
                 (battle.phase === "aimShoot" || battle.actMode === "fire") &&
@@ -330,10 +332,11 @@ function Scene() {
               unit={u}
               map={battle.map}
               graphics={settings.graphics}
+              battle={battle}
               selected={u.id === battle.selectedId && u.playerId === battle.playerId}
               ready={ready.has(u.id)}
               hidden={hidden}
-              dim={u.team !== battle.turnTeam}
+              dim={u.team !== battle.turnTeam || !u.alive}
             />
           </group>
         );

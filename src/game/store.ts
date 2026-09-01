@@ -13,6 +13,7 @@ import {
   endTurn,
   resolveShot,
   selectUnit,
+  deselectUnit,
   setActMode,
   stepMove,
   updateFacing,
@@ -22,7 +23,7 @@ import {
 import { revealExplored } from "./vision";
 import type { ActMode } from "./types";
 import { meleeEnemies, rangedTargets } from "./combat";
-import { sfx, unlockAudio, applyVolumes } from "./audio";
+import { sfx, unlockAudio, applyVolumes, startAmbience, stopAmbience } from "./audio";
 import {
   getSharedGame,
   grantGuestAcl,
@@ -121,6 +122,7 @@ type Store = {
   beginBattle: (opts?: { enemyArmy?: ArmyLoadout; first?: Faction }) => void;
   loadRecord: (g: GameRecord) => void;
   select: (id: string) => void;
+  deselect: () => void;
   clickTile: (col: number, row: number) => void;
   hoverTile: (col: number | null, row: number | null) => void;
   confirmFacing: () => void;
@@ -187,7 +189,11 @@ export const useGame = create<Store>((set, get) => ({
   statusMessage: null,
   aiTimer: 0,
   resolveTimer: 0,
-  setScreen: (screen) => set({ screen }),
+  setScreen: (screen) => {
+    if (screen === "battle") startAmbience();
+    else stopAmbience();
+    set({ screen });
+  },
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   patchSettings: (p) => {
     const settings = { ...get().settings, ...p };
@@ -351,6 +357,7 @@ export const useGame = create<Store>((set, get) => ({
       playerFaction: battle.playerFaction,
     };
     sfx.confirm();
+    startAmbience();
     set({ battle, record: rec, screen: "battle", participants });
     void saveGame(null, rec);
     void removePublicLobby(null, rec.id);
@@ -428,11 +435,14 @@ export const useGame = create<Store>((set, get) => ({
     rec.hostArmy = rec.hostFaction === faction ? army : rec.hostArmy;
     rec.guestArmy = rec.guestFaction === faction ? army : rec.guestArmy;
     sfx.confirm();
+    startAmbience();
     set({ battle, record: rec, screen: "battle", statusMessage: null });
     void saveGame(null, rec);
   },
   loadRecord: (g) => {
     unlockAudio(get().settings);
+    if (g.battle) startAmbience();
+    else stopAmbience();
     set({
       record: g,
       battle: g.battle,
@@ -451,8 +461,17 @@ export const useGame = create<Store>((set, get) => ({
   select: (id) => {
     const battle = get().battle;
     if (!battle) return;
-    sfx.ui();
+    const unit = battle.units.find((u) => u.id === id);
+    if (!unit || !sfx.command(unit.type, unit.faction)) sfx.ui();
     set({ battle: selectUnit(battle, id) });
+  },
+  deselect: () => {
+    const battle = get().battle;
+    if (!battle) return;
+    const next = deselectUnit(battle);
+    if (next === battle) return;
+    sfx.ui();
+    set({ battle: next });
   },
   clickTile: (col, row) => {
     const battle = get().battle;
@@ -528,9 +547,7 @@ export const useGame = create<Store>((set, get) => ({
     const next = confirmShoot(battle, targetId);
     if (next === battle) return;
     const unit = battle.units.find((u) => u.id === battle.selectedId);
-    if (unit?.faction === "brood") sfx.alien();
-    else if (unit?.type === "sniper") sfx.sniper();
-    else if (unit?.type === "machine_gunner") sfx.mg();
+    if (unit) sfx.attack(unit.type, unit.faction);
     else sfx.shot();
     const resolveTimer = unit?.type === "machine_gunner" ? 0.62 : 0.48;
     set({ battle: next, resolveTimer });
@@ -552,7 +569,13 @@ export const useGame = create<Store>((set, get) => ({
     if (battle.phase === "moving") {
       const prevFx = battle.fx.length;
       const next = stepMove(battle, dt);
-      if (next.fx.length > prevFx) sfx.shot();
+      if (next.fx.length > prevFx) {
+        const watcher = next.units.find(
+          (u) => u.overwatchedThisTurn && !battle.units.find((p) => p.id === u.id)?.overwatchedThisTurn,
+        );
+        if (watcher) sfx.attack(watcher.type, watcher.faction);
+        else sfx.shot();
+      }
       if (next.phase === "gameOver") sfx.lose();
       set({ battle: next });
       return;
@@ -580,9 +603,7 @@ export const useGame = create<Store>((set, get) => ({
         if (next.phase === "resolving") {
           const attacker = next.units.find((u) => u.id === next.pendingShot?.attackerId);
           if (next.pendingShot?.kind === "melee") sfx.melee();
-          else if (attacker?.faction === "brood") sfx.alien();
-          else if (attacker?.type === "sniper") sfx.sniper();
-          else if (attacker?.type === "machine_gunner") sfx.mg();
+          else if (attacker) sfx.attack(attacker.type, attacker.faction);
           else sfx.shot();
         }
         const resolveTimer =
@@ -635,6 +656,7 @@ export const useGame = create<Store>((set, get) => ({
     const shared = await getSharedGame(client, hostId, gameId);
     if (shared?.battle) {
       const mine = userId === hostId ? shared.hostFaction : shared.guestFaction;
+      startAmbience();
       set({
         record: { ...shared, playerFaction: mine ?? shared.playerFaction },
         battle: shared.battle,

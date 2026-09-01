@@ -1,12 +1,15 @@
-import { Flag, Pause, SkipForward, Swords, Target } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Flag, Pause, SkipForward, Swords, Target, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { actOptions, useGame } from "@/game/store";
-import { UNIT_STATS, FACTION_NAME, SPRITE_SRC } from "@/game/units";
+import { UNIT_STATS, SPRITE_SRC } from "@/game/units";
 import { activationsCap, activationsDone, localParticipant, whyImmobile } from "@/game/battle";
 import { colorHex } from "@/game/lobby";
 import { Minimap } from "./Minimap";
 import { cn } from "@/lib/utils";
 import type { BattleState, UnitState, UnitStats } from "@/game/types";
+
+const CARD_SLIDE_MS = 320;
 
 function UnitActions({
   battle,
@@ -24,8 +27,9 @@ function UnitActions({
   const confirmFacing = useGame((s) => s.confirmFacing);
   const opts = actOptions(battle, selected);
   if (!yours || selected.playerId !== battle.playerId) return null;
+  const compactBtn = "sm:h-7 sm:px-2 sm:text-[11px]";
   return (
-    <div className="mt-auto flex flex-wrap items-center gap-1.5 sm:gap-2">
+    <div className="flex flex-wrap items-center gap-1.5 sm:gap-1.5">
       {!selected.acted && (
         <div className="flex rounded-[var(--radius-sm)] border border-border bg-surface-2 p-0.5">
           <button
@@ -33,7 +37,7 @@ function UnitActions({
             disabled={selected.moved}
             onClick={() => setMode("move")}
             className={cn(
-              "h-11 rounded-[calc(var(--radius-sm)-2px)] px-3 text-xs font-medium sm:h-9",
+              "h-11 rounded-[calc(var(--radius-sm)-2px)] px-3 text-xs font-medium sm:h-7 sm:px-2.5",
               battle.actMode === "move" ? "bg-accent text-accent-fg" : "text-muted hover:text-fg",
               selected.moved && "opacity-40",
             )}
@@ -44,7 +48,7 @@ function UnitActions({
             type="button"
             onClick={() => setMode("fire")}
             className={cn(
-              "h-11 rounded-[calc(var(--radius-sm)-2px)] px-3 text-xs font-medium sm:h-9",
+              "h-11 rounded-[calc(var(--radius-sm)-2px)] px-3 text-xs font-medium sm:h-7 sm:px-2.5",
               battle.actMode === "fire" ? "bg-accent text-accent-fg" : "text-muted hover:text-fg",
             )}
           >
@@ -53,23 +57,23 @@ function UnitActions({
         </div>
       )}
       {battle.phase === "aimFacing" && (
-        <Button onClick={confirmFacing}>
-          <Flag className="size-4" />
+        <Button className={compactBtn} onClick={confirmFacing}>
+          <Flag className="size-4 sm:size-3.5" />
           <span className="sm:hidden">Confirm</span>
           <span className="hidden sm:inline">Confirm move</span>
         </Button>
       )}
       {(battle.phase === "act" || battle.phase === "aimShoot" || battle.actMode === "fire") && (
         <>
-          <Button onClick={shoot} disabled={opts.ranged.length === 0}>
-            <Target className="size-4" /> Fire
+          <Button className={compactBtn} onClick={shoot} disabled={opts.ranged.length === 0}>
+            <Target className="size-4 sm:size-3.5" /> Fire
           </Button>
           {opts.melee[0] ? (
-            <Button variant="secondary" onClick={() => melee(opts.melee[0].id)}>
-              <Swords className="size-4" /> Melee
+            <Button variant="secondary" className={compactBtn} onClick={() => melee(opts.melee[0].id)}>
+              <Swords className="size-4 sm:size-3.5" /> Melee
             </Button>
           ) : null}
-          <Button variant="ghost" onClick={skip}>
+          <Button variant="ghost" className={compactBtn} onClick={skip}>
             Wait
           </Button>
         </>
@@ -78,20 +82,44 @@ function UnitActions({
   );
 }
 
+function DeselectButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="Deselect"
+      className="flex size-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-muted hover:bg-surface-2 hover:text-fg sm:size-6"
+    >
+      <X className="size-4 sm:size-3.5" />
+    </button>
+  );
+}
+
 function SelectedCard({
   selected,
   stats,
   battle,
   yours,
+  open,
+  onDeselect,
 }: {
   selected: UnitState;
   stats: UnitStats;
   battle: BattleState;
   yours: boolean;
+  open: boolean;
+  onDeselect: () => void;
 }) {
   const reason = whyImmobile(battle, selected);
   return (
-    <aside className="pointer-events-auto flex h-full min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-hidden rounded-[var(--radius-lg)] border border-border bg-surface/95 p-2 shadow-[var(--shadow-panel)] backdrop-blur-md sm:gap-3 sm:p-3">
+    <aside
+      className={cn(
+        "pointer-events-auto flex min-h-0 min-w-0 flex-col gap-1.5 overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface/95 p-2 shadow-[var(--shadow-panel)] backdrop-blur-md sm:w-80 sm:max-w-[calc(100%-14rem)] sm:shrink-0 sm:gap-1.5 sm:px-2.5 sm:py-2",
+        "max-sm:h-full max-sm:flex-1",
+        "sm:origin-bottom sm:transition-transform sm:duration-300 sm:ease-[cubic-bezier(0.22,1,0.36,1)]",
+        open ? "sm:translate-y-0" : "max-sm:hidden sm:pointer-events-none sm:translate-y-[calc(100%+1.25rem)]",
+      )}
+    >
       <div className="flex min-h-0 flex-1 items-center gap-2 sm:hidden">
         <img
           src={SPRITE_SRC[selected.type]}
@@ -99,38 +127,41 @@ function SelectedCard({
           className="size-12 shrink-0 object-contain"
           crossOrigin="anonymous"
         />
-        <h2 className="min-w-0 truncate font-display text-lg font-semibold leading-none">{stats.name}</h2>
+        <h2 className="min-w-0 flex-1 truncate font-display text-lg font-semibold leading-none">{stats.name}</h2>
+        <DeselectButton onClick={onDeselect} />
       </div>
-      <div className="hidden min-h-0 flex-1 gap-3 sm:flex">
+      <div className="hidden min-w-0 items-start gap-2 sm:flex">
         <img
           src={SPRITE_SRC[selected.type]}
           alt=""
-          className="size-16 shrink-0 self-start object-contain sm:size-20"
+          className="size-11 shrink-0 object-contain"
           crossOrigin="anonymous"
         />
-        <div className="min-w-0 flex-1 overflow-hidden">
-          <div className="flex items-baseline justify-between gap-2">
-            <h2 className="font-display text-2xl font-semibold leading-none">{stats.name}</h2>
-            <p className="font-mono text-xs tabular-nums text-muted">
-              {selected.hp}/{selected.maxHp}
-            </p>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="min-w-0 truncate font-display text-lg font-semibold leading-none">{stats.name}</h2>
+            <div className="flex shrink-0 items-center gap-1">
+              <p className="font-mono text-[11px] tabular-nums text-muted">
+                {selected.hp}/{selected.maxHp}
+              </p>
+              <DeselectButton onClick={onDeselect} />
+            </div>
           </div>
-          <p className="mt-1 text-xs uppercase tracking-widest text-muted">{stats.role}</p>
-          <p className="mt-1 line-clamp-2 text-sm text-muted">{stats.description}</p>
-          <dl className="mt-2 grid grid-cols-4 gap-2 text-center text-xs">
-            {[
-              ["Move", stats.move],
-              ["Range", stats.range || "—"],
-              ["Fire", stats.damage || "—"],
-              ["Arc", `${stats.arc}°`],
-            ].map(([k, v]) => (
-              <div key={k} className="rounded-[var(--radius-sm)] bg-surface-2 px-1 py-1.5">
-                <dt className="text-xs uppercase tracking-wider text-subtle">{k}</dt>
-                <dd className="font-mono tabular-nums">{v}</dd>
-              </div>
-            ))}
-          </dl>
-          {reason ? <p className="mt-2 truncate text-sm text-muted">{reason}</p> : null}
+          <p className="mt-0.5 truncate text-xs leading-snug text-muted" title={stats.description}>
+            {stats.description}
+          </p>
+          <p className="mt-0.5 truncate text-[11px] leading-none text-fg/80">
+            <span className="uppercase tracking-wider text-subtle">{stats.role}</span>
+            <span className="mx-1 text-subtle">·</span>
+            <span className="font-mono tabular-nums">Mv {stats.move}</span>
+            <span className="mx-1 text-subtle">·</span>
+            <span className="font-mono tabular-nums">Rng {stats.range || "—"}</span>
+            <span className="mx-1 text-subtle">·</span>
+            <span className="font-mono tabular-nums">Fire {stats.damage || "—"}</span>
+            <span className="mx-1 text-subtle">·</span>
+            <span className="font-mono tabular-nums">Arc {stats.arc}°</span>
+          </p>
+          {reason ? <p className="mt-0.5 truncate text-[11px] text-muted">{reason}</p> : null}
         </div>
       </div>
       <UnitActions battle={battle} selected={selected} yours={yours} />
@@ -144,19 +175,61 @@ export function Hud() {
   const end = useGame((s) => s.end);
   const startHotseat = useGame((s) => s.startHotseat);
   const setScreen = useGame((s) => s.setScreen);
+  const deselect = useGame((s) => s.deselect);
+  const selected = battle?.units.find((u) => u.id === battle.selectedId) ?? null;
+  const stats = selected ? UNIT_STATS[selected.type] : null;
+  const over = battle?.phase === "gameOver";
+  const showCard = Boolean(
+    battle && selected && stats && !over && selected.playerId === battle.playerId,
+  );
+  const [cardOpen, setCardOpen] = useState(false);
+  const [held, setHeld] = useState<{ selected: UnitState; stats: UnitStats } | null>(null);
+
+  useEffect(() => {
+    if (showCard && selected && stats) {
+      setHeld({ selected, stats });
+      let id2 = 0;
+      const id1 = requestAnimationFrame(() => {
+        id2 = requestAnimationFrame(() => setCardOpen(true));
+      });
+      return () => {
+        cancelAnimationFrame(id1);
+        cancelAnimationFrame(id2);
+      };
+    }
+    setCardOpen(false);
+    const t = window.setTimeout(() => setHeld(null), CARD_SLIDE_MS);
+    return () => window.clearTimeout(t);
+  }, [showCard]); // eslint-disable-line react-hooks/exhaustive-deps -- slide on show/hide only
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      const { settingsOpen: settings, setSettingsOpen, battle: current, deselect: clear } = useGame.getState();
+      if (settings) {
+        e.preventDefault();
+        setSettingsOpen(false);
+        return;
+      }
+      if (!current?.selectedId) return;
+      e.preventDefault();
+      clear();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   if (!battle) return null;
 
-  const selected = battle.units.find((u) => u.id === battle.selectedId) ?? null;
-  const stats = selected ? UNIT_STATS[selected.type] : null;
   const me = localParticipant(battle);
   const hold = battle.hotseatPending;
   const yours = Boolean(me && battle.turnTeam === me.team && !hold);
-  const over = battle.phase === "gameOver";
   const used = activationsDone(battle);
   const cap = activationsCap(battle);
-  const showCard = Boolean(
-    selected && stats && !over && selected.playerId === battle.playerId,
-  );
+  const cardSelected = showCard && selected && stats ? selected : held?.selected ?? null;
+  const cardStats = showCard && selected && stats ? stats : held?.stats ?? null;
 
   if (hold) {
     return (
@@ -235,16 +308,18 @@ export function Hud() {
       )}
 
       {!over && (
-        <div className="flex h-32 items-stretch gap-2 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:h-56 sm:p-4 sm:pt-0">
-          {showCard && selected && stats && (
-            <SelectedCard selected={selected} stats={stats} battle={battle} yours={yours} />
+        <div className="flex h-32 items-stretch gap-2 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:h-auto sm:items-end sm:p-4 sm:pt-0">
+          {cardSelected && cardStats && (
+            <SelectedCard
+              selected={cardSelected}
+              stats={cardStats}
+              battle={battle}
+              yours={yours}
+              open={cardOpen}
+              onDeselect={deselect}
+            />
           )}
-          <div
-            className={cn(
-              "aspect-[196/148] h-full shrink-0",
-              !showCard && "ml-auto",
-            )}
-          >
+          <div className="ml-auto aspect-[196/148] h-full shrink-0 sm:h-[148px] sm:w-[196px]">
             <Minimap />
           </div>
         </div>

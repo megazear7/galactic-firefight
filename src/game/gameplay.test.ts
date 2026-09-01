@@ -6,12 +6,15 @@ import {
   pickOverwatch,
   sightHorizon,
 } from "./combat.ts";
-import { createBattle, confirmShoot, selectUnit, setActMode, turnExhausted, waitUnit, activationsDone, activationsCap, beginHotseat, endTurn, canControl } from "./battle.ts";
+import { createBattle, confirmShoot, selectUnit, deselectUnit, setActMode, chooseDestination, confirmMove, stepMove, turnExhausted, waitUnit, activationsDone, activationsCap, beginHotseat, endTurn, canControl } from "./battle.ts";
 import { UNIT_STATS } from "./units.ts";
 import { MAP_SLOT_CAP } from "./types.ts";
 import { findPath, pathCost, blockedAt } from "./pathfinding.ts";
-import { circleHitsTerrain, dist, generateMap, MAP_DIMS } from "./map.ts";
-import type { BattleMap, UnitState } from "./types.ts";
+import { circleHitsTerrain, dist, generateMap, idx, MAP_DIMS } from "./map.ts";
+import { visionMask } from "./vision.ts";
+import { hasUnitModel, pickModelUrl, unitPose } from "./models.ts";
+import { allGameAssetUrls } from "./preload.ts";
+import type { BattleMap, BattleState, UnitState } from "./types.ts";
 
 function floorMap(cols = 8, rows = 8): BattleMap {
   return {
@@ -240,6 +243,108 @@ describe("fire/move toggle", () => {
     assert.equal(state.actMode, "move");
   });
 
+  it("selects attack targets after moving if any are in range", () => {
+    let state = createBattle({
+      seed: 3,
+      playerFaction: "empire",
+      playerArmy: { captain: 1, soldier: 3 },
+      enemyArmy: { tyrant: 1, broodling: 4, spatling: 2 },
+      mode: "single",
+      first: "empire",
+    });
+    const soldier = state.units.find((x) => x.alive && x.type === "soldier" && x.faction === "empire");
+    const prey = state.units.find((x) => x.alive && x.faction === "brood");
+    assert.ok(soldier && prey);
+    const col = Math.min(soldier.col, state.map.cols - 6);
+    const row = Math.max(2, Math.min(state.map.rows - 3, soldier.row));
+    state = {
+      ...state,
+      map: {
+        ...state.map,
+        tiles: state.map.tiles.map((kind, i) => {
+          const c = i % state.map.cols;
+          const r = Math.floor(i / state.map.cols);
+          if (r === row && c >= col && c <= col + 5) return "floor";
+          return kind;
+        }),
+      },
+      units: state.units.map((u) => {
+        if (u.id === soldier.id) return { ...u, col, row, facing: 0 };
+        if (u.id === prey.id) return { ...u, col: col + 4, row, facing: Math.PI };
+        return u;
+      }),
+    };
+    state = selectUnit(state, soldier.id);
+    state = chooseDestination(state, col + 1, row);
+    assert.equal(state.phase, "aimFacing");
+    state = confirmMove(state);
+    for (let i = 0; i < 40 && state.phase === "moving"; i++) {
+      state = stepMove(state, 1);
+    }
+    assert.equal(state.actMode, "fire");
+    assert.equal(state.phase, "aimShoot");
+    assert.equal(state.selectedId, soldier.id);
+  });
+
+  it("stays in act after a move when nothing is in range", () => {
+    let state = createBattle({
+      seed: 3,
+      playerFaction: "empire",
+      playerArmy: { captain: 1, soldier: 3 },
+      enemyArmy: { tyrant: 1, broodling: 4, spatling: 2 },
+      mode: "single",
+      first: "empire",
+    });
+    const soldier = state.units.find((x) => x.alive && x.type === "soldier" && x.faction === "empire");
+    assert.ok(soldier);
+    const col = Math.min(soldier.col, 2);
+    const row = Math.max(2, Math.min(state.map.rows - 3, soldier.row));
+    state = {
+      ...state,
+      map: {
+        ...state.map,
+        tiles: state.map.tiles.map((kind, i) => {
+          const c = i % state.map.cols;
+          const r = Math.floor(i / state.map.cols);
+          if (r === row && c >= 0 && c <= 4) return "floor";
+          return kind;
+        }),
+      },
+      units: state.units.map((u) => {
+        if (u.id === soldier.id) return { ...u, col, row, facing: 0 };
+        if (u.faction === "brood") return { ...u, col: state.map.cols - 2, row: u.row };
+        return u;
+      }),
+    };
+    state = selectUnit(state, soldier.id);
+    state = chooseDestination(state, col + 1, row);
+    state = confirmMove(state);
+    for (let i = 0; i < 40 && state.phase === "moving"; i++) {
+      state = stepMove(state, 1);
+    }
+    assert.equal(state.actMode, "fire");
+    assert.equal(state.phase, "act");
+  });
+
+  it("deselects a unit and cancels an unconfirmed move", () => {
+    let state = createBattle({
+      seed: 3,
+      playerFaction: "empire",
+      playerArmy: { captain: 1, soldier: 3 },
+      enemyArmy: { tyrant: 1, broodling: 4, spatling: 2 },
+      mode: "single",
+      first: "empire",
+    });
+    const u = state.units.find((x) => x.alive && x.faction === "empire" && !x.acted);
+    assert.ok(u);
+    state = selectUnit(state, u.id);
+    assert.equal(state.selectedId, u.id);
+    state = deselectUnit(state);
+    assert.equal(state.selectedId, null);
+    assert.equal(state.phase, "select");
+    assert.equal(state.pendingMove, null);
+  });
+
   it("does not fire when it is not the player's turn", () => {
     let state = createBattle({
       seed: 5,
@@ -315,7 +420,51 @@ describe("hotseat", () => {
   });
 });
 
+function visOf(map: BattleMap, u: UnitState, extras: UnitState[] = []) {
+  return visionMask(
+    {
+      map,
+      units: [u, ...extras],
+      participants: [],
+      playerId: u.playerId,
+    } as unknown as BattleState,
+    u.team,
+  );
+}
+
 describe("fog of war", () => {
+  it("reveals a wall you are looking at, including diagonally", () => {
+    const map = floorMap(12, 8);
+    setTile(map, 6, 3, "wall");
+    setTile(map, 5, 5, "structure");
+    const viewer = unit({ id: "v", col: 3, row: 3, type: "soldier" });
+    const vis = visOf(map, viewer);
+    assert.equal(vis[idx(6, 3, map.cols)], true, "front wall should be visible");
+    assert.equal(vis[idx(5, 5, map.cols)], true, "diagonal structure should be visible");
+  });
+
+  it("reveals the rest of a terrain cluster once its front face is seen", () => {
+    const map = floorMap(12, 8);
+    setTile(map, 6, 3, "wall");
+    setTile(map, 7, 3, "wall");
+    setTile(map, 6, 4, "wall");
+    const viewer = unit({ id: "v", col: 3, row: 3, type: "soldier" });
+    const vis = visOf(map, viewer);
+    assert.equal(vis[idx(6, 3, map.cols)], true);
+    assert.equal(vis[idx(7, 3, map.cols)], true, "depth behind the front face");
+    assert.equal(vis[idx(6, 4, map.cols)], true, "adjacent mass of the same obstacle");
+  });
+
+  it("does not reveal terrain behind a blocking wall", () => {
+    const map = floorMap(14, 8);
+    setTile(map, 5, 3, "wall");
+    setTile(map, 10, 3, "wall");
+    const viewer = unit({ id: "v", col: 2, row: 3, type: "soldier" });
+    const vis = visOf(map, viewer);
+    assert.equal(vis[idx(5, 3, map.cols)], true);
+    assert.equal(vis[idx(10, 3, map.cols)], false);
+  });
+
   it("reveals tiles around the player army and hides the far edge", () => {
     const state = createBattle({
       seed: 11,
@@ -356,5 +505,33 @@ describe("activations", () => {
     assert.equal(state.turn, "brood");
     assert.equal(turnExhausted(state), false);
     assert.equal(activationsDone(state, 1), 0);
+  });
+});
+
+describe("unit models", () => {
+  it("uses empire soldier glTF clips and falls back when a unit has none", () => {
+    assert.equal(hasUnitModel("soldier", "empire"), true);
+    assert.equal(hasUnitModel("captain", "empire"), false);
+    assert.equal(hasUnitModel("soldier", "brood"), false);
+    const idle = pickModelUrl("soldier", "empire", "idle", "u-1");
+    assert.ok(idle?.endsWith(".glb"));
+    assert.match(idle ?? "", /empire-soldier-idle-/);
+    assert.equal(unitPose({ id: "a", alive: true }, { phase: "select", pendingMove: null, pendingShot: null }), "idle");
+    assert.equal(
+      unitPose(
+        { id: "a", alive: true },
+        { phase: "moving", pendingMove: { unitId: "a" }, pendingShot: null },
+      ),
+      "move",
+    );
+    assert.equal(unitPose({ id: "a", alive: false }, { phase: "select", pendingMove: null, pendingShot: null }), "dead");
+  });
+
+  it("preloads audio, models, and sprites before a match", () => {
+    const urls = allGameAssetUrls();
+    assert.ok(urls.some((u) => u.endsWith("ambience.mp3")));
+    assert.ok(urls.some((u) => u.includes("empire-soldier-idle-01.glb")));
+    assert.ok(urls.some((u) => u.endsWith("/assets/units/soldier.png")));
+    assert.ok(urls.some((u) => u.includes("empire-soldier-ranged-attack-01.mp3")));
   });
 });

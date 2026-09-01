@@ -46,7 +46,7 @@ export function SettingsPanel() {
               ))}
             </div>
             <p className="mt-2 text-xs text-subtle">
-              Sprites ship today. 3D mode uses stand-in geometry, ready for glTF units later.
+              3D uses glTF clips when a unit has them, and the image sprite otherwise.
             </p>
           </div>
 

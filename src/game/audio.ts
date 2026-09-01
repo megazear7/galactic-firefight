@@ -1,5 +1,5 @@
 import { Howl, Howler } from "howler";
-import type { Settings } from "./types";
+import type { Faction, Settings, UnitType } from "./types";
 
 type Buses = {
   ctx: AudioContext;
@@ -35,12 +35,61 @@ const FILES: Record<SfxName, { src: string; gain: number }> = {
   alien: { src: "/assets/sfx/alien.mp3", gain: 0.7 },
 };
 
+/** `{faction}-{unit-type}-command-NN` stems. Underscores in UnitType become hyphens. */
+const COMMAND_FILES = [
+  "empire-captain-command-01",
+  "empire-captain-command-02",
+  "empire-captain-command-03",
+  "empire-soldier-command-01",
+  "empire-soldier-command-02",
+  "empire-soldier-command-03",
+  "empire-soldier-command-04",
+  "empire-soldier-command-05",
+  "empire-soldier-command-06",
+  "empire-soldier-command-07",
+  "empire-soldier-command-08",
+  "empire-soldier-command-09",
+  "empire-soldier-command-10",
+  "empire-soldier-command-11",
+  "empire-soldier-command-12",
+  "empire-machine-gunner-command-01",
+  "empire-machine-gunner-command-02",
+  "empire-sniper-command-01",
+  "empire-sniper-command-02",
+];
+
+/** `{faction}-{unit-type}-ranged-attack-NN` stems. */
+const ATTACK_FILES = [
+  "empire-captain-ranged-attack-01",
+  "empire-soldier-ranged-attack-01",
+  "empire-soldier-ranged-attack-02",
+  "empire-soldier-ranged-attack-03",
+  "empire-soldier-ranged-attack-04",
+  "empire-machine-gunner-ranged-attack-01",
+  "empire-machine-gunner-ranged-attack-02",
+  "empire-machine-gunner-ranged-attack-03",
+  "empire-sniper-ranged-attack-01",
+  "empire-sniper-ranged-attack-02",
+  "empire-sniper-ranged-attack-03",
+  "empire-sniper-ranged-attack-04",
+];
+
+const COMMAND_GAIN = 0.72;
+const ATTACK_GAIN = 0.7;
+
+const AMBIENCE_SRC = "/assets/sfx/ambience.mp3";
+const AMBIENCE_GAIN = 0.16;
+
 let buses: Buses | null = null;
 let musicNodes: OscillatorNode[] = [];
 let unlocked = false;
 let sfxLevel = 1;
+let musicLevel = 1;
+let ambience: Howl | null = null;
 const howls = new Map<SfxName, Howl>();
-const failed = new Set<SfxName>();
+const clipHowls = new Map<string, Howl>();
+const clipGain = new Map<string, number>();
+const failed = new Set<string>();
 
 function curve(v: number) {
   const x = Math.max(0, Math.min(1, v));
@@ -63,14 +112,19 @@ function getCtx() {
 
 export function applyVolumes(settings: Settings) {
   sfxLevel = curve(settings.sfx);
+  musicLevel = curve(settings.music);
   Howler.volume(curve(settings.master));
   for (const [name, clip] of howls) {
     clip.volume(sfxLevel * FILES[name].gain);
   }
+  for (const [src, clip] of clipHowls) {
+    clip.volume(sfxLevel * (clipGain.get(src) ?? COMMAND_GAIN));
+  }
+  ambience?.volume(musicLevel * AMBIENCE_GAIN);
   if (!buses) return;
   const t = buses.ctx.currentTime;
   buses.master.gain.setTargetAtTime(curve(settings.master), t, 0.04);
-  buses.music.gain.setTargetAtTime(curve(settings.music) * 0.35, t, 0.04);
+  buses.music.gain.setTargetAtTime(musicLevel * 0.22, t, 0.04);
   buses.sfx.gain.setTargetAtTime(sfxLevel, t, 0.04);
 }
 
@@ -86,6 +140,110 @@ function getHowl(name: SfxName) {
   clip.once("loaderror", () => failed.add(name));
   howls.set(name, clip);
   return clip;
+}
+
+function unitClipSrcs(files: string[], kind: "command" | "ranged-attack", type: UnitType, faction: Faction) {
+  const prefix = `${faction}-${type.replaceAll("_", "-")}-${kind}-`;
+  return files.filter((name) => name.startsWith(prefix)).map((name) => `/assets/sfx/${name}.mp3`);
+}
+
+function getClipHowl(src: string, gain: number) {
+  let clip = clipHowls.get(src);
+  if (clip) return clip;
+  clipGain.set(src, gain);
+  clip = new Howl({ src: [src], volume: sfxLevel * gain, preload: true });
+  clip.once("loaderror", () => failed.add(src));
+  clipHowls.set(src, clip);
+  return clip;
+}
+
+let commandBusy = false;
+
+function commandIsPlaying() {
+  if (commandBusy) return true;
+  for (const [src, clip] of clipHowls) {
+    if (!src.includes("-command-")) continue;
+    if (clip.playing()) return true;
+  }
+  return false;
+}
+
+function releaseCommand() {
+  commandBusy = false;
+}
+
+function playClip(src: string, gain: number, onDone?: () => void) {
+  if (failed.has(src)) {
+    onDone?.();
+    return false;
+  }
+  const clip = getClipHowl(src, gain);
+  if (clip.state() === "unloaded") {
+    onDone?.();
+    return false;
+  }
+  clip.volume(sfxLevel * gain);
+  if (onDone) {
+    clip.once("end", onDone);
+    clip.once("stop", onDone);
+    clip.once("playerror", onDone);
+  }
+  if (clip.state() === "loaded") {
+    clip.play();
+    return true;
+  }
+  clip.once("load", () => {
+    if (clip.playing()) return;
+    clip.play();
+  });
+  return true;
+}
+
+function playRandomClip(files: string[], kind: "command" | "ranged-attack", type: UnitType, faction: Faction, gain: number) {
+  const srcs = unitClipSrcs(files, kind, type, faction);
+  if (!srcs.length) return false;
+  const src = srcs[Math.floor(Math.random() * srcs.length)];
+  return playClip(src, gain);
+}
+
+export function playCommand(type: UnitType, faction: Faction) {
+  const srcs = unitClipSrcs(COMMAND_FILES, "command", type, faction);
+  if (!srcs.length) return false;
+  if (commandIsPlaying()) return true;
+  commandBusy = true;
+  const src = srcs[Math.floor(Math.random() * srcs.length)];
+  return playClip(src, COMMAND_GAIN, releaseCommand);
+}
+
+export function playAttack(type: UnitType, faction: Faction) {
+  return playRandomClip(ATTACK_FILES, "ranged-attack", type, faction, ATTACK_GAIN);
+}
+
+function getAmbience() {
+  if (ambience) return ambience;
+  ambience = new Howl({
+    src: [AMBIENCE_SRC],
+    loop: true,
+    volume: musicLevel * AMBIENCE_GAIN,
+    preload: true,
+  });
+  ambience.once("loaderror", () => {
+    failed.add(AMBIENCE_SRC);
+    ambience = null;
+  });
+  return ambience;
+}
+
+export function startAmbience() {
+  if (failed.has(AMBIENCE_SRC)) return;
+  const clip = getAmbience();
+  clip.volume(musicLevel * AMBIENCE_GAIN);
+  if (!clip.playing()) clip.play();
+}
+
+export function stopAmbience() {
+  if (!ambience) return;
+  ambience.stop();
 }
 
 function playFile(name: SfxName, fallback: () => void) {
@@ -106,6 +264,33 @@ function playFile(name: SfxName, fallback: () => void) {
   clip.once("load", () => clip.play());
 }
 
+export function allAudioUrls() {
+  return [
+    ...Object.values(FILES).map((f) => f.src),
+    AMBIENCE_SRC,
+    ...COMMAND_FILES.map((name) => `/assets/sfx/${name}.mp3`),
+    ...ATTACK_FILES.map((name) => `/assets/sfx/${name}.mp3`),
+  ];
+}
+
+function waitHowl(clip: Howl) {
+  if (clip.state() === "loaded") return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    clip.once("load", () => resolve());
+    clip.once("loaderror", () => resolve());
+  });
+}
+
+export async function warmAudioBank() {
+  (Object.keys(FILES) as SfxName[]).forEach(getHowl);
+  getAmbience();
+  for (const name of COMMAND_FILES) getClipHowl(`/assets/sfx/${name}.mp3`, COMMAND_GAIN);
+  for (const name of ATTACK_FILES) getClipHowl(`/assets/sfx/${name}.mp3`, ATTACK_GAIN);
+  const clips: Howl[] = [...howls.values(), ...clipHowls.values()];
+  if (ambience) clips.push(ambience);
+  await Promise.all(clips.map(waitHowl));
+}
+
 export function unlockAudio(settings: Settings) {
   const b = getCtx();
   if (b.ctx.state === "suspended") void b.ctx.resume();
@@ -113,7 +298,7 @@ export function unlockAudio(settings: Settings) {
   if (!unlocked) {
     unlocked = true;
     startMusic();
-    (Object.keys(FILES) as SfxName[]).forEach(getHowl);
+    void warmAudioBank();
   }
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && buses?.ctx.state === "suspended") {
@@ -217,4 +402,13 @@ export const sfx = {
       noiseBurst(0.16, 0.2, 900);
       tone(240, 0.14, "sawtooth", 0.06);
     }),
+  command: (type: UnitType, faction: Faction) => playCommand(type, faction),
+  attack: (type: UnitType, faction: Faction) => {
+    if (playAttack(type, faction)) return true;
+    if (faction === "brood") sfx.alien();
+    else if (type === "sniper") sfx.sniper();
+    else if (type === "machine_gunner") sfx.mg();
+    else sfx.shot();
+    return true;
+  },
 };

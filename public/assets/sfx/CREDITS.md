@@ -15,5 +15,14 @@ Clips sourced from Envato Elements via the Envato MCP catalog search.
 | `move.mp3` | Footstep Grass Soldier Walk Fast Earthy Tactical 17 | Ghetty | https://elements.envato.com/footstep-grass-soldier-walk-fast-earthy-tactical-1-XB3RPY2 |
 | `win.mp3` | Game Fanfare Win | Top-Up-Sounds | https://elements.envato.com/game-fanfare-win-E4VUZ9E |
 | `lose.mp3` | Game Over Fail | Top-Up-Sounds | https://elements.envato.com/game-over-fail-XQADTML |
+| `ambience.mp3` | Battle ambience (looped quietly in match) | — | — |
+| `empire-captain-command-01.mp3` … `03.mp3` | Captain command barks | — | — |
+| `empire-soldier-command-01.mp3` … `12.mp3` | Soldier command barks | — | — |
+| `empire-machine-gunner-command-01.mp3` … `02.mp3` | Machine-gunner command barks | — | — |
+| `empire-sniper-command-01.mp3` … `02.mp3` | Sniper command barks | — | — |
+| `empire-captain-ranged-attack-01.mp3` | Captain ranged attack | — | — |
+| `empire-soldier-ranged-attack-01.mp3` … `04.mp3` | Soldier ranged attacks | — | — |
+| `empire-machine-gunner-ranged-attack-01.mp3` … `03.mp3` | Machine-gunner ranged attacks | — | — |
+| `empire-sniper-ranged-attack-01.mp3` … `04.mp3` | Sniper ranged attacks | — | — |
 
 License these items on Envato Elements before shipping a public build. Preview files are used here for local play; replace with the licensed downloads from your Envato account for production.

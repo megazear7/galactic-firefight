@@ -237,7 +237,7 @@ export type Settings = {
 };
 
 export const DEFAULT_SETTINGS: Settings = {
-  graphics: "sprites",
+  graphics: "models",
   master: 0.85,
   music: 0.45,
   sfx: 0.8,

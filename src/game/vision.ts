@@ -1,27 +1,140 @@
-import { circleHitsTerrain, dist, idx, isBlocked } from "./map";
-import { hasLos } from "./combat";
+import { clamp, dist, idx, inBounds, isBlocked } from "./map";
+import { hasLos, losRadius } from "./combat";
 import { sightRange } from "./units";
 import type { BattleMap, BattleState, UnitState } from "./types";
 import { devicePlayers } from "./lobby";
 
 export { sightRange };
 
+const TERRAIN_DIRS = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+  [1, 1],
+  [1, -1],
+  [-1, 1],
+  [-1, -1],
+] as const;
+
 export function emptyMask(map: BattleMap): boolean[] {
   return Array.from({ length: map.cols * map.rows }, () => false);
 }
 
+function bodyBlocks(col: number, row: number, units: UnitState[], skip: Set<string>) {
+  for (const u of units) {
+    if (!u.alive || skip.has(u.id)) continue;
+    const r = losRadius(u.type);
+    const dx = col - u.col;
+    const dy = row - u.row;
+    if (dx * dx + dy * dy < r * r) return true;
+  }
+  return false;
+}
+
+/** Terrain collision that ignores the obstacle we are trying to see. */
+function hitsOtherTerrain(
+  map: BattleMap,
+  col: number,
+  row: number,
+  radius: number,
+  exceptCol: number,
+  exceptRow: number,
+) {
+  const pad = radius;
+  if (col < -0.5 + pad || row < -0.5 + pad || col > map.cols - 0.5 - pad || row > map.rows - 0.5 - pad) {
+    return true;
+  }
+  const c0 = Math.floor(col - radius);
+  const c1 = Math.ceil(col + radius);
+  const r0 = Math.floor(row - radius);
+  const r1 = Math.ceil(row + radius);
+  const hitR = radius + 0.02;
+  for (let tc = c0; tc <= c1; tc++) {
+    for (let tr = r0; tr <= r1; tr++) {
+      if (tc === exceptCol && tr === exceptRow) continue;
+      if (!isBlocked(map, tc, tr)) continue;
+      const nx = clamp(col, tc - 0.5, tc + 0.5);
+      const ny = clamp(row, tr - 0.5, tr + 0.5);
+      const dx = col - nx;
+      const dy = row - ny;
+      if (dx * dx + dy * dy < hitR * hitR) return true;
+    }
+  }
+  return false;
+}
+
+function inTile(col: number, row: number, tc: number, tr: number, pad: number) {
+  return col >= tc - 0.5 - pad && col <= tc + 0.5 + pad && row >= tr - 0.5 - pad && row <= tr + 0.5 + pad;
+}
+
+/** True when a ray from the unit reaches this obstacle's facing surface. */
+function canSeeTerrainFace(
+  unit: UnitState,
+  map: BattleMap,
+  units: UnitState[],
+  col: number,
+  row: number,
+) {
+  const cap = sightRange(unit.type);
+  const faceCol = clamp(unit.col, col - 0.5, col + 0.5);
+  const faceRow = clamp(unit.row, row - 0.5, row + 0.5);
+  const dx = faceCol - unit.col;
+  const dy = faceRow - unit.row;
+  const len = Math.hypot(dx, dy);
+  if (len > cap + 0.12) return false;
+  if (len < 0.16) return true;
+  const skip = new Set([unit.id]);
+  const steps = Math.max(10, Math.ceil(len * 16));
+  for (let s = 1; s <= steps; s++) {
+    const t = s / steps;
+    const c = unit.col + dx * t;
+    const r = unit.row + dy * t;
+    if (inTile(c, r, col, row, 0.04)) return true;
+    if (hitsOtherTerrain(map, c, r, 0.07, col, row)) return false;
+    if (t * len > 0.34 && bodyBlocks(c, r, units, skip)) return false;
+  }
+  return true;
+}
+
 function canSeeTile(unit: UnitState, map: BattleMap, units: UnitState[], col: number, row: number) {
   const cap = sightRange(unit.type);
-  if (dist(unit, { col, row }) > cap + 0.55) return false;
   if (!isBlocked(map, col, row)) {
+    if (dist(unit, { col, row }) > cap + 0.55) return false;
     return hasLos(map, unit, { col, row }, units, [unit.id]);
   }
-  const dx = col - unit.col;
-  const dy = row - unit.row;
-  const len = Math.hypot(dx, dy) || 1;
-  const before = { col: col - (dx / len) * 0.58, row: row - (dy / len) * 0.58 };
-  if (circleHitsTerrain(map, before.col, before.row, 0.05) && dist(unit, before) > 0.4) return false;
-  return hasLos(map, unit, before, units, [unit.id]);
+  return canSeeTerrainFace(unit, map, units, col, row);
+}
+
+function revealTerrainVolume(vis: boolean[], map: BattleMap) {
+  const out = vis.slice();
+  for (let row = 0; row < map.rows; row++) {
+    for (let col = 0; col < map.cols; col++) {
+      const i = idx(col, row, map.cols);
+      if (!vis[i] || isBlocked(map, col, row)) continue;
+      for (const [dc, dr] of TERRAIN_DIRS) {
+        if (dc !== 0 && dr !== 0) continue;
+        const nc = col + dc;
+        const nr = row + dr;
+        if (!inBounds(nc, nr, map) || !isBlocked(map, nc, nr)) continue;
+        out[idx(nc, nr, map.cols)] = true;
+      }
+    }
+  }
+  const seeded = out.slice();
+  for (let row = 0; row < map.rows; row++) {
+    for (let col = 0; col < map.cols; col++) {
+      const i = idx(col, row, map.cols);
+      if (!seeded[i] || !isBlocked(map, col, row)) continue;
+      for (const [dc, dr] of TERRAIN_DIRS) {
+        const nc = col + dc;
+        const nr = row + dr;
+        if (!inBounds(nc, nr, map) || !isBlocked(map, nc, nr)) continue;
+        out[idx(nc, nr, map.cols)] = true;
+      }
+    }
+  }
+  return out;
 }
 
 /** Tiles currently seen by living units of `team`. */
@@ -36,7 +149,7 @@ export function visionMask(state: BattleState, team: number): boolean[] {
   });
   for (const unit of viewers) {
     const cap = sightRange(unit.type);
-    const reach = cap + 0.6;
+    const reach = cap + 1.05;
     const c0 = Math.max(0, Math.floor(unit.col - reach));
     const c1 = Math.min(map.cols - 1, Math.ceil(unit.col + reach));
     const r0 = Math.max(0, Math.floor(unit.row - reach));
@@ -49,7 +162,7 @@ export function visionMask(state: BattleState, team: number): boolean[] {
       }
     }
   }
-  return vis;
+  return revealTerrainVolume(vis, map);
 }
 
 export function tileExplored(state: BattleState, col: number, row: number) {

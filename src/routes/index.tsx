@@ -1,6 +1,6 @@
-import { lazy, Suspense, useEffect } from "react";
+import { useEffect } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Hud } from "@/components/game/Hud";
+import { BattleStage } from "@/components/game/BattleStage";
 import { ArmyBuilder } from "@/components/menu/ArmyBuilder";
 import { JoinScreen } from "@/components/menu/JoinScreen";
 import { LobbyScreen } from "@/components/menu/LobbyScreen";
@@ -12,10 +12,7 @@ import { SetupScreen } from "@/components/menu/SetupScreen";
 import { useGame } from "@/game/store";
 import { useIdentity } from "@/lib/identity/provider";
 import { unlockAudio } from "@/game/audio";
-
-const BattleCanvas = lazy(() =>
-  import("@/components/game/BattleCanvas").then((m) => ({ default: m.BattleCanvas })),
-);
+import { ensureGameAssets } from "@/game/preload";
 
 export const Route = createFileRoute("/")({ component: Home });
 
@@ -27,7 +24,11 @@ function Home() {
   const identity = useIdentity();
 
   useEffect(() => {
-    const onFirst = () => unlockAudio(settings);
+    void ensureGameAssets();
+    const onFirst = () => {
+      unlockAudio(settings);
+      void ensureGameAssets();
+    };
     window.addEventListener("pointerdown", onFirst, { once: true });
     return () => window.removeEventListener("pointerdown", onFirst);
   }, [settings]);
@@ -52,14 +53,7 @@ function Home() {
       {screen === "army" && <ArmyBuilder />}
       {screen === "resume" && <ResumeScreen />}
       {screen === "join" && <JoinScreen />}
-      {screen === "battle" && (
-        <div className="relative h-dvh w-full overflow-hidden">
-          <Suspense fallback={<div className="size-full bg-bg" />}>
-            <BattleCanvas />
-          </Suspense>
-          <Hud />
-        </div>
-      )}
+      {screen === "battle" && <BattleStage />}
       <SettingsPanel />
     </div>
   );

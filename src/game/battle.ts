@@ -424,6 +424,16 @@ function resumeSide(state: BattleState): BattleState {
   return { ...state, phase: state.phase === "act" ? "act" : "select", selectedId: state.selectedId };
 }
 
+function enterFireAfterMove(state: BattleState): BattleState {
+  if (state.phase !== "act" && state.phase !== "select") return state;
+  const unit = unitById(state, state.selectedId);
+  if (!unit?.alive || unit.acted) return state;
+  if (rangedTargets(unit, state.units, state.map).length) {
+    return { ...state, actMode: "fire", phase: "aimShoot" };
+  }
+  return { ...state, actMode: "fire", phase: "act" };
+}
+
 export function readyUnits(state: BattleState) {
   if (activationsDone(state) >= ACTIVATIONS_PER_TURN) return [];
   const me = localParticipant(state);
@@ -490,6 +500,18 @@ export function selectUnit(state: BattleState, id: string): BattleState {
     return { ...state, selectedId: id, phase: "select", pendingMove: null, actMode: "move" };
   }
   return { ...state, selectedId: id, phase: "aimMove", pendingMove: null, actMode: "move" };
+}
+
+export function deselectUnit(state: BattleState): BattleState {
+  if (!state.selectedId) return state;
+  if (state.phase === "moving" || state.phase === "resolving") return state;
+  return {
+    ...state,
+    selectedId: null,
+    pendingMove: null,
+    phase: state.phase === "enemyTurn" || state.phase === "gameOver" ? state.phase : "select",
+    actMode: "move",
+  };
 }
 
 export function setActMode(state: BattleState, mode: ActMode): BattleState {
@@ -655,18 +677,20 @@ export function stepMove(state: BattleState, dt: number): BattleState {
         }
       : u,
   );
-  return revealExplored(
-    resumeSide({
-      ...state,
-      units,
-      fx,
-      log: lines.slice(0, 40),
-      pendingMove: null,
-      moveProgress: 0,
-      selectedId: unit.id,
-      phase: "act",
-      actMode: "fire",
-    }),
+  return enterFireAfterMove(
+    revealExplored(
+      resumeSide({
+        ...state,
+        units,
+        fx,
+        log: lines.slice(0, 40),
+        pendingMove: null,
+        moveProgress: 0,
+        selectedId: unit.id,
+        phase: "act",
+        actMode: "fire",
+      }),
+    ),
   );
 }
 
@@ -675,7 +699,7 @@ export function skipMove(state: BattleState): BattleState {
   if (!unit) return state;
   if (state.phase !== "aimMove" && state.phase !== "aimFacing") return state;
   const units = state.units.map((u) => (u.id === unit.id ? { ...u, moved: true } : u));
-  return { ...state, units, phase: "act", pendingMove: null };
+  return enterFireAfterMove({ ...state, units, phase: "act", pendingMove: null, actMode: "fire" });
 }
 
 export function beginShoot(state: BattleState): BattleState {

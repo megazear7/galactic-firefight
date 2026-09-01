@@ -14,3 +14,4 @@ artifacts
 AGENTS.md
 AGENTS.project.md
 src/routeTree.gen.ts
+.DS_Store
