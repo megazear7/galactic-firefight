@@ -20,6 +20,7 @@ import type {
   LogLine,
   MapSize,
   Participant,
+  TerrainBias,
   PlayMode,
   PointScale,
   UnitState,
@@ -247,6 +248,8 @@ export function createBattle(opts: {
   mode?: PlayMode;
   first?: Faction;
   mapSize?: MapSize;
+  terrainDensity?: TerrainBias;
+  terrainSize?: TerrainBias;
   participants?: Participant[];
   localPlayerId?: string;
   teamOrder?: number[];
@@ -290,7 +293,10 @@ export function createBattle(opts: {
         : shuffleTeams(teams, opts.seed);
   const localPlayerId = opts.localPlayerId ?? participants.find((p) => p.kind === "human")?.id ?? participants[0].id;
   const local = participants.find((p) => p.id === localPlayerId) ?? participants[0];
-  const map = generateMap(opts.seed, opts.mapSize ?? "medium");
+  const map = generateMap(opts.seed, opts.mapSize ?? "medium", {
+    density: opts.terrainDensity,
+    size: opts.terrainSize,
+  });
   const taken = new Set<string>();
   const units: UnitState[] = [];
   const grouped = new Map<number, Participant[]>();

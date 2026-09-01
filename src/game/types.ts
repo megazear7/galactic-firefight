@@ -1,4 +1,4 @@
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 export const ACTIVATIONS_PER_TURN = 5;
 
 export type Faction = "empire" | "brood";
@@ -13,6 +13,8 @@ export type UnitType =
 
 export type PointScale = 100 | 200 | 300;
 export type MapSize = "small" | "medium" | "large";
+/** 1–3 bias for map clutter. Always mixed; this only tilts the generator. */
+export type TerrainBias = 1 | 2 | 3;
 export type GraphicsMode = "sprites" | "models";
 export type PlayMode = "single" | "multi";
 export type SlotKind = "human" | "local" | "ai" | "open" | "invite";
@@ -211,6 +213,8 @@ export type GameRecord = {
   mode: PlayMode;
   points: PointScale;
   mapSize: MapSize;
+  terrainDensity: TerrainBias;
+  terrainSize: TerrainBias;
   visibility: GameVisibility;
   passcode?: string;
   participants: Participant[];

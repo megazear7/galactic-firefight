@@ -80,6 +80,8 @@ export function JoinScreen() {
         mode: "multi",
         points: next.points,
         mapSize: next.mapSize,
+        terrainDensity: next.terrainDensity ?? 2,
+        terrainSize: next.terrainSize ?? 2,
         visibility: next.visibility,
         gameName: next.name,
       });

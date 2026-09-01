@@ -1,4 +1,4 @@
-import type { BattleMap, MapSize, TileKind } from "./types";
+import type { BattleMap, MapSize, TerrainBias, TileKind } from "./types";
 
 export const TILE = 1.55;
 export const MAP_COLS = 32;
@@ -15,6 +15,22 @@ export const MAP_SIZE_LABEL: Record<MapSize, string> = {
   medium: "Medium",
   large: "Large",
 };
+
+export const TERRAIN_DENSITY_LABEL: Record<TerrainBias, string> = {
+  1: "Sparse",
+  2: "Typical",
+  3: "Packed",
+};
+
+export const TERRAIN_SIZE_LABEL: Record<TerrainBias, string> = {
+  1: "Small",
+  2: "Mixed",
+  3: "Large",
+};
+
+export function parseTerrainBias(v: unknown, fallback: TerrainBias = 2): TerrainBias {
+  return v === 1 || v === 3 ? v : fallback;
+}
 
 export function mulberry32(seed: number) {
   let a = seed >>> 0;
@@ -106,21 +122,41 @@ export function dist(a: { col: number; row: number }, b: { col: number; row: num
   return Math.hypot(dx, dy);
 }
 
-export function generateMap(seed: number, size: MapSize = "medium"): BattleMap {
+const DENSITY_TILT: Record<TerrainBias, number> = { 1: 0.58, 2: 1, 3: 1.55 };
+const SCATTER_TILT: Record<TerrainBias, number> = { 1: 1.4, 2: 1, 3: 0.62 };
+
+function clusterFootprint(rand: () => number, sizeBias: TerrainBias) {
+  const roll = rand();
+  let bucket: 0 | 1 | 2;
+  if (sizeBias === 1) bucket = roll < 0.55 ? 0 : roll < 0.85 ? 1 : 2;
+  else if (sizeBias === 3) bucket = roll < 0.14 ? 0 : roll < 0.42 ? 1 : 2;
+  else bucket = roll < 0.28 ? 0 : roll < 0.72 ? 1 : 2;
+  if (bucket === 0) return { w: 1 + Math.floor(rand() * 2), h: 1 + Math.floor(rand() * 2) };
+  if (bucket === 1) return { w: 2 + Math.floor(rand() * 2), h: 1 + Math.floor(rand() * 3) };
+  return { w: 3 + Math.floor(rand() * 4), h: 3 + Math.floor(rand() * 3) };
+}
+
+export function generateMap(
+  seed: number,
+  size: MapSize = "medium",
+  terrain: { density?: TerrainBias; size?: TerrainBias } = {},
+): BattleMap {
   const { cols, rows } = MAP_DIMS[size];
   const tiles: TileKind[] = Array.from({ length: cols * rows }, () => "floor");
   const rand = mulberry32(seed || 1);
   const scale = (cols * rows) / (MAP_COLS * MAP_ROWS);
+  const density = parseTerrainBias(terrain.density);
+  const sizeBias = parseTerrainBias(terrain.size);
 
   const place = (c: number, r: number, kind: TileKind) => {
     if (c < 3 || c >= cols - 3 || r < 3 || r >= rows - 3) return;
     tiles[idx(c, r, cols)] = kind;
   };
 
-  const clusters = Math.max(6, Math.round((16 + Math.floor(rand() * 8)) * scale));
+  const densityJitter = 0.78 + rand() * 0.44;
+  const clusters = Math.max(4, Math.round(17 * DENSITY_TILT[density] * densityJitter * scale));
   for (let i = 0; i < clusters; i++) {
-    const w = 1 + Math.floor(rand() * 4);
-    const h = 1 + Math.floor(rand() * 3);
+    const { w, h } = clusterFootprint(rand, sizeBias);
     const c0 = 3 + Math.floor(rand() * Math.max(1, cols - 6 - w));
     const r0 = Math.floor(rand() * Math.max(1, rows - h));
     const kind: TileKind = rand() > 0.55 ? "structure" : "wall";
@@ -131,7 +167,11 @@ export function generateMap(seed: number, size: MapSize = "medium"): BattleMap {
     }
   }
 
-  const extras = Math.max(8, Math.round(22 * scale));
+  const extraJitter = 0.8 + rand() * 0.4;
+  const extras = Math.max(
+    4,
+    Math.round(20 * DENSITY_TILT[density] * SCATTER_TILT[sizeBias] * extraJitter * scale),
+  );
   for (let i = 0; i < extras; i++) {
     const c = 4 + Math.floor(rand() * Math.max(1, cols - 8));
     const r = Math.floor(rand() * rows);

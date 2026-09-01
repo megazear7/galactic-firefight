@@ -2,10 +2,11 @@ import { Minus, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useGame } from "@/game/store";
 import { FACTION_NAME, SPRITE_SRC, UNIT_STATS, armyCost, factionUnits, freeLeaders, leaderType, maxExtraLeaders, remainingPoints } from "@/game/units";
-import { MAP_SIZE_LABEL } from "@/game/map";
-import { PLAYER_PALETTE, type Faction, type Participant, type UnitType } from "@/game/types";
+import { MAP_SIZE_LABEL, TERRAIN_DENSITY_LABEL, TERRAIN_SIZE_LABEL } from "@/game/map";
+import { PLAYER_PALETTE, type Faction, type Participant, type TerrainBias, type UnitType } from "@/game/types";
 import { humansReady, playable, slotCap } from "@/game/lobby";
 import { cn } from "@/lib/utils";
 import { useIdentity } from "@/lib/identity/provider";
@@ -146,11 +147,56 @@ function SlotCard({ p, host, localId, points }: { p: Participant; host: boolean;
   );
 }
 
+function ScaleRow({
+  label,
+  hint,
+  value,
+  options,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  value: TerrainBias;
+  options: Record<TerrainBias, string>;
+  disabled: boolean;
+  onChange: (n: TerrainBias) => void;
+}) {
+  return (
+    <section>
+      <Label>{label}</Label>
+      <p className="mt-1 text-sm text-muted">{hint}</p>
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        {([1, 2, 3] as const).map((n) => (
+          <button
+            key={n}
+            type="button"
+            disabled={disabled}
+            onClick={() => onChange(n)}
+            className={cn(
+              "h-16 rounded-[var(--radius-md)] border font-display text-xl",
+              value === n ? "border-accent bg-surface-2" : "border-border bg-surface",
+              disabled && "cursor-default opacity-80",
+            )}
+          >
+            {n}
+            <span className="block text-xs font-sans uppercase tracking-wider text-subtle">{options[n]}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function LobbyScreen() {
   const record = useGame((s) => s.record);
   const participants = useGame((s) => s.participants);
   const mapSize = useGame((s) => s.mapSize);
   const points = useGame((s) => s.points);
+  const terrainDensity = useGame((s) => s.terrainDensity);
+  const terrainSize = useGame((s) => s.terrainSize);
+  const setTerrainDensity = useGame((s) => s.setTerrainDensity);
+  const setTerrainSize = useGame((s) => s.setTerrainSize);
   const visibility = useGame((s) => s.visibility);
   const addSlot = useGame((s) => s.addSlot);
   const startMatch = useGame((s) => s.startMatch);
@@ -176,7 +222,29 @@ export function LobbyScreen() {
           <div>
             {participants.length}/{cap} slots
           </div>
+          <div>
+            {TERRAIN_DENSITY_LABEL[terrainDensity]} density · {TERRAIN_SIZE_LABEL[terrainSize]} cover
+          </div>
         </dl>
+      </div>
+
+      <div className="grid gap-6 sm:grid-cols-2">
+        <ScaleRow
+          label="Terrain density"
+          hint="Tilts how much cover appears. Always a bit random."
+          value={terrainDensity}
+          options={TERRAIN_DENSITY_LABEL}
+          disabled={!host}
+          onChange={setTerrainDensity}
+        />
+        <ScaleRow
+          label="Terrain size"
+          hint="Tilts toward small bits or large masses. Always a mix."
+          value={terrainSize}
+          options={TERRAIN_SIZE_LABEL}
+          disabled={!host}
+          onChange={setTerrainSize}
+        />
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">

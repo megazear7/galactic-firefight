@@ -224,6 +224,56 @@ describe("map size", () => {
     assert.equal(small.tiles.length, small.cols * small.rows);
     assert.equal(large.tiles.length, large.cols * large.rows);
   });
+
+  it("tilts clutter density without emptying or filling the field", () => {
+    const sparse = generateMap(11, "medium", { density: 1, size: 2 });
+    const packed = generateMap(11, "medium", { density: 3, size: 2 });
+    const blocked = (map: BattleMap) => map.tiles.filter((t) => t !== "floor").length;
+    const a = blocked(sparse);
+    const b = blocked(packed);
+    assert.ok(b > a, `packed ${b} should beat sparse ${a}`);
+    assert.ok(a > 8, "sparse still has cover");
+    assert.ok(b < sparse.tiles.length * 0.55, "packed still leaves room to walk");
+  });
+
+  it("tilts toward larger masses while still mixing sizes", () => {
+    const small = generateMap(11, "medium", { density: 2, size: 1 });
+    const large = generateMap(11, "medium", { density: 2, size: 3 });
+    const maxBlob = (map: BattleMap) => {
+      const seen = new Set<number>();
+      let best = 0;
+      for (let i = 0; i < map.tiles.length; i++) {
+        if (map.tiles[i] === "floor" || seen.has(i)) continue;
+        let n = 0;
+        const stack = [i];
+        seen.add(i);
+        while (stack.length) {
+          const k = stack.pop()!;
+          n++;
+          const c = k % map.cols;
+          const r = Math.floor(k / map.cols);
+          for (const [dc, dr] of [
+            [1, 0],
+            [-1, 0],
+            [0, 1],
+            [0, -1],
+          ] as const) {
+            const nc = c + dc;
+            const nr = r + dr;
+            if (nc < 0 || nr < 0 || nc >= map.cols || nr >= map.rows) continue;
+            const j = nr * map.cols + nc;
+            if (seen.has(j) || map.tiles[j] === "floor") continue;
+            seen.add(j);
+            stack.push(j);
+          }
+        }
+        if (n > best) best = n;
+      }
+      return best;
+    };
+    assert.ok(maxBlob(large) > maxBlob(small), "large bias should make bigger masses");
+    assert.ok(maxBlob(small) >= 1);
+  });
 });
 
 describe("fire/move toggle", () => {

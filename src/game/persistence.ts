@@ -66,6 +66,8 @@ function migrateGame(raw: GameRecord): GameRecord {
     mode: raw.mode === "multi" ? "multi" : "single",
     points: raw.points === 200 || raw.points === 300 ? raw.points : 100,
     mapSize: raw.mapSize === "small" || raw.mapSize === "large" ? raw.mapSize : "medium",
+    terrainDensity: raw.terrainDensity === 1 || raw.terrainDensity === 3 ? raw.terrainDensity : 2,
+    terrainSize: raw.terrainSize === 1 || raw.terrainSize === 3 ? raw.terrainSize : 2,
     visibility: raw.visibility === "public" ? "public" : "private",
     passcode: raw.passcode,
     participants: raw.participants ?? [],
