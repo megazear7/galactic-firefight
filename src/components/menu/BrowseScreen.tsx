@@ -7,11 +7,12 @@ import { listPublicLobbies } from "@/game/persistence";
 import type { PublicListing } from "@/game/types";
 import { MAP_SIZE_LABEL } from "@/game/map";
 import { useIdentity } from "@/lib/identity/provider";
+import { useNavigate } from "@tanstack/react-router";
 
 export function BrowseScreen() {
-  const setScreen = useGame((s) => s.setScreen);
   const joinListing = useGame((s) => s.joinListing);
   const identity = useIdentity();
+  const navigate = useNavigate();
   const [games, setGames] = useState<PublicListing[]>([]);
   const [codes, setCodes] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -68,7 +69,10 @@ export function BrowseScreen() {
                 )}
                 <Button
                   onClick={() => {
-                    void joinListing(g, codes[g.id] ?? "", identity.user, identity.client).then(setError);
+                    void joinListing(g, codes[g.id] ?? "", identity.user, identity.client).then((message) => {
+                      setError(message);
+                      if (!message) void navigate({ to: "/game/$gameId/roster", params: { gameId: g.id } });
+                    });
                   }}
                 >
                   Join
@@ -80,7 +84,7 @@ export function BrowseScreen() {
       </div>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       <div className="mt-auto flex gap-3">
-        <Button variant="ghost" onClick={() => setScreen("menu")}>
+        <Button variant="ghost" onClick={() => void navigate({ to: "/" })}>
           Back
         </Button>
         <Button variant="secondary" onClick={reload}>

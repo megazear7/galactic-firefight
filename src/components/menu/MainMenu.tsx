@@ -9,7 +9,6 @@ import { unlockAudio } from "@/game/audio";
 
 export function MainMenu() {
   const startSetup = useGame((s) => s.startSetup);
-  const setScreen = useGame((s) => s.setScreen);
   const setOpen = useGame((s) => s.setSettingsOpen);
   const settings = useGame((s) => s.settings);
   const identity = useIdentity();
@@ -66,28 +65,19 @@ export function MainMenu() {
             Steel captains against a living tide. Build a force, take the field, and spend each activation like it is the last.
           </p>
           <div className="mt-8 flex max-w-sm flex-col gap-3">
-            <Button
-              size="lg"
-              onClick={() => {
-                unlockAudio(settings);
-                startSetup();
-              }}
-            >
-              Create game
+            <Button size="lg" asChild>
+              <Link to="/create" onClick={() => { unlockAudio(settings); startSetup(); }}>
+                Create game
+              </Link>
             </Button>
-            <Button size="lg" variant="secondary" onClick={() => setScreen("browse")}>
-              Browse games
+            <Button size="lg" variant="secondary" asChild>
+              <Link to="/games">Browse games</Link>
             </Button>
             <Button size="lg" variant="outline" asChild>
               <Link to="/forces">Force Codex</Link>
             </Button>
-            <Button
-              size="lg"
-              variant="outline"
-              disabled={saves === 0}
-              onClick={() => setScreen("resume")}
-            >
-              Resume saved game
+            <Button size="lg" variant="outline" disabled={saves === 0} asChild>
+              <Link to="/games/resume">Resume saved game</Link>
             </Button>
           </div>
         </div>

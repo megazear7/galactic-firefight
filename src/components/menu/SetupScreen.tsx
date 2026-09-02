@@ -7,13 +7,13 @@ import { MAP_SLOT_CAP } from "@/game/types";
 import { cn } from "@/lib/utils";
 import type { MapSize, PointScale } from "@/game/types";
 import { useIdentity } from "@/lib/identity/provider";
+import { useNavigate } from "@tanstack/react-router";
 
 export function SetupScreen() {
   const points = useGame((s) => s.points);
   const mapSize = useGame((s) => s.mapSize);
   const setPoints = useGame((s) => s.setPoints);
   const setMapSize = useGame((s) => s.setMapSize);
-  const setScreen = useGame((s) => s.setScreen);
   const gameName = useGame((s) => s.gameName);
   const setGameName = useGame((s) => s.setGameName);
   const passcode = useGame((s) => s.passcode);
@@ -22,6 +22,7 @@ export function SetupScreen() {
   const setVisibility = useGame((s) => s.setVisibility);
   const confirmCreate = useGame((s) => s.confirmCreate);
   const identity = useIdentity();
+  const navigate = useNavigate();
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-3xl flex-col gap-8 px-5 py-8">
@@ -109,10 +110,17 @@ export function SetupScreen() {
       </section>
 
       <div className="mt-auto flex gap-3">
-        <Button variant="ghost" onClick={() => setScreen("menu")}>
+        <Button variant="ghost" onClick={() => void navigate({ to: "/" })}>
           Back
         </Button>
-        <Button className="flex-1" onClick={() => confirmCreate(identity.user, identity.client)}>
+        <Button
+          className="flex-1"
+          onClick={() => {
+            confirmCreate(identity.user, identity.client);
+            const id = useGame.getState().record?.id;
+            if (id) void navigate({ to: "/game/$gameId/roster", params: { gameId: id } });
+          }}
+        >
           Continue to roster
         </Button>
       </div>

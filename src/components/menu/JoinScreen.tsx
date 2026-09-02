@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useGame } from "@/game/store";
-import { FACTION_BLURB, FACTION_NAME, defaultLoadout } from "@/game/units";
+import { defaultLoadout } from "@/game/units";
 import type { Faction } from "@/game/types";
 import { useIdentity } from "@/lib/identity/provider";
 import {
@@ -12,20 +12,18 @@ import {
   type MpLobby,
 } from "@/game/persistence";
 import { claimInviteSlot, claimOpenSlot } from "@/game/lobby";
-import { cn } from "@/lib/utils";
+import { useNavigate } from "@tanstack/react-router";
 
 export function JoinScreen() {
   const identity = useIdentity();
+  const navigate = useNavigate();
   const hostId = useGame((s) => s.joinHostId);
   const gameId = useGame((s) => s.joinGameId);
-  const faction = useGame((s) => s.faction);
   const setFaction = useGame((s) => s.setFaction);
-  const army = useGame((s) => s.army);
   const points = useGame((s) => s.points);
   const setPoints = useGame((s) => s.setPoints);
   const setMapSize = useGame((s) => s.setMapSize);
   const setArmy = useGame((s) => s.setArmy);
-  const setScreen = useGame((s) => s.setScreen);
   const [lobby, setLobby] = useState<MpLobby | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -71,7 +69,14 @@ export function JoinScreen() {
         return;
       }
       const mine = claimed.find((p) => p.userId === identity.user!.id);
-      const next = { ...existing, participants: claimed, playerId: mine?.id ?? existing.playerId, status: "lobby" as const, mode: "multi" as const };
+      const next = {
+        ...existing,
+        participants: claimed,
+        playerId: mine?.id ?? existing.playerId,
+        status: "lobby" as const,
+        mode: "multi" as const,
+        updatedAt: new Date().toISOString(),
+      };
       await putSharedGame(identity.client, hostId, gameId, next);
       useGame.setState({
         record: next,
@@ -87,6 +92,7 @@ export function JoinScreen() {
         visibility: next.visibility,
         gameName: next.name,
       });
+      void navigate({ to: "/game/$gameId/roster", params: { gameId } });
     } catch {
       setError(
         `Could not write to the host save. Tell the host your email (${identity.user.email ?? "unknown"}) so they can admit you.`,
@@ -100,7 +106,7 @@ export function JoinScreen() {
     return (
       <div className="mx-auto max-w-md px-5 py-16 text-sm text-muted">
         Megazear identity is not configured in this preview, so invites cannot be claimed here.
-        <Button className="mt-4" onClick={() => setScreen("menu")}>
+        <Button className="mt-4" onClick={() => void navigate({ to: "/" })}>
           Menu
         </Button>
       </div>
@@ -134,7 +140,7 @@ export function JoinScreen() {
         <HostAdmit hostId={hostId} gameId={gameId ?? ""} />
       ) : null}
       <div className="mt-auto flex gap-3">
-        <Button variant="ghost" onClick={() => setScreen("menu")}>
+        <Button variant="ghost" onClick={() => void navigate({ to: "/" })}>
           Menu
         </Button>
         <Button className="flex-1" disabled={busy} onClick={() => void join()}>

@@ -2,7 +2,6 @@ import { dist } from "./map";
 import { findPath, reachable } from "./pathfinding";
 import { meleeEnemies, rangedTargets, shotVictims, unitBlockers, unitRadius } from "./combat";
 import { UNIT_STATS, hasFleet } from "./units";
-import { ACTIVATIONS_PER_TURN } from "./types";
 import type { BattleState, UnitState } from "./types";
 
 export type AiIntent =
@@ -26,9 +25,10 @@ function nearestEnemy(unit: UnitState, units: UnitState[]) {
 }
 
 export function pickAiAction(state: BattleState): AiIntent | null {
-  const done = state.units.filter((u) => u.team === state.turnTeam && u.acted).length;
+  const done = state.units.filter((u) => u.alive && u.team === state.turnTeam && u.acted).length;
   const mid = state.units.find((u) => u.alive && u.team === state.turnTeam && u.moved && !u.acted);
-  if (!mid && done >= ACTIVATIONS_PER_TURN) return null;
+  const cap = state.units.filter((u) => u.alive && u.team === state.turnTeam).length;
+  if (!mid && done >= cap) return null;
 
   const ready = mid
     ? [mid]

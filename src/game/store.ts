@@ -154,6 +154,7 @@ type Store = {
   melee: (targetId: string) => void;
   fireAt: (targetId: string) => void;
   end: () => void;
+  surrender: () => void;
   tick: (dt: number) => void;
   persist: (client: UserDataClient | null, actorId?: string) => void;
   hydrateJoin: (hostId: string, gameId: string) => void;
@@ -556,6 +557,7 @@ export const useGame = create<Store>((set, get) => ({
       participants: claimed,
       playerId: playerId ?? game.playerId,
       status: "lobby" as const,
+      updatedAt: new Date().toISOString(),
     };
     sfx.confirm();
     set({
@@ -758,6 +760,19 @@ export const useGame = create<Store>((set, get) => ({
     if (!battle) return;
     sfx.ui();
     set({ battle: endTurn(battle), aiTimer: 0.4 });
+  },
+  surrender: () => {
+    const battle = get().battle;
+    const me = battle ? localParticipant(battle) : null;
+    if (!battle || !me || battle.phase === "gameOver") return;
+    const defeated = {
+      ...battle,
+      units: battle.units.map((unit) =>
+        unit.team === me.team ? { ...unit, alive: false, hp: 0 } : unit,
+      ),
+    };
+    sfx.lose();
+    set({ battle: checkWinner(defeated) });
   },
   tick: (dt) => {
     let { battle, aiTimer, resolveTimer } = get();

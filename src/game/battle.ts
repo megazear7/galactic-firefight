@@ -26,7 +26,7 @@ import type {
   PointScale,
   UnitState,
 } from "./types";
-import { ACTIVATIONS_PER_TURN, SAVE_VERSION } from "./types";
+import { SAVE_VERSION } from "./types";
 import { UNIT_STATS, factionUnits, hasFleet, leaderType } from "./units";
 import { emptyMask, revealExplored } from "./vision";
 
@@ -383,17 +383,16 @@ function livingTeams(state: BattleState) {
 }
 
 export function activationsDone(state: BattleState, team = state.turnTeam) {
-  return state.units.filter((u) => u.team === team && u.acted).length;
+  return state.units.filter((u) => u.alive && u.team === team && u.acted).length;
 }
 
 export function activationsCap(state: BattleState, team = state.turnTeam) {
-  const n = state.units.filter((u) => u.alive && u.team === team).length;
-  return Math.min(ACTIVATIONS_PER_TURN, n);
+  return state.units.filter((u) => u.alive && u.team === team).length;
 }
 
 export function turnExhausted(state: BattleState) {
   if (state.units.some((u) => u.alive && u.team === state.turnTeam && u.moved && !u.acted)) return false;
-  if (activationsDone(state) >= ACTIVATIONS_PER_TURN) return true;
+  if (activationsDone(state) >= activationsCap(state)) return true;
   return !state.units.some((u) => u.alive && u.team === state.turnTeam && !u.acted);
 }
 
@@ -444,7 +443,7 @@ function enterFireAfterMove(state: BattleState): BattleState {
 }
 
 export function readyUnits(state: BattleState) {
-  if (activationsDone(state) >= ACTIVATIONS_PER_TURN) return [];
+  if (activationsDone(state) >= activationsCap(state)) return [];
   const me = localParticipant(state);
   return state.units.filter((u) => {
     if (!u.alive || u.team !== state.turnTeam || u.moved || u.acted) return false;
@@ -474,8 +473,8 @@ export function whyImmobile(state: BattleState, unit: UnitState): string | null 
   const me = localParticipant(state);
   if (me && unit.playerId !== me.id) return "That unit belongs to another commander.";
   if (unit.acted) return "This unit has already completed its activation.";
-  if (activationsDone(state) >= ACTIVATIONS_PER_TURN && !unit.moved) {
-    return "This side has spent its five activations.";
+  if (activationsDone(state) >= activationsCap(state) && !unit.moved) {
+    return "This side has completed all available activations.";
   }
   if (unit.moved && !unit.acted) return "Already moved — it may still fire or strike.";
   if (state.phase === "enemyTurn") return "Another team is acting.";
@@ -505,7 +504,7 @@ export function selectUnit(state: BattleState, id: string): BattleState {
   if (unit.moved && !unit.acted) {
     return { ...state, selectedId: id, phase: "act", pendingMove: null, actMode: "fire" };
   }
-  if (unit.acted || (activationsDone(state) >= ACTIVATIONS_PER_TURN && !unit.moved)) {
+  if (unit.acted || (activationsDone(state) >= activationsCap(state) && !unit.moved)) {
     return { ...state, selectedId: id, phase: "select", pendingMove: null, actMode: "move" };
   }
   return { ...state, selectedId: id, phase: "aimMove", pendingMove: null, actMode: "move" };
@@ -908,7 +907,7 @@ export function endTurn(state: BattleState): BattleState {
     hotseatPending: hold,
     log: [
       log(
-        hold ? `Pass the device to ${hold.name}.` : `Team ${nextTeam} — five activations.`,
+        hold ? `Pass the device to ${hold.name}.` : `Team ${nextTeam} — all units activate.`,
         nextFaction,
       ),
       ...state.log,

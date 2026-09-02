@@ -31,6 +31,7 @@ import {
 import { humansReady, playable, slotCap } from "@/game/lobby";
 import { cn } from "@/lib/utils";
 import { useIdentity } from "@/lib/identity/provider";
+import { useNavigate } from "@tanstack/react-router";
 
 function SlotCard({
   p,
@@ -264,8 +265,8 @@ export function LobbyScreen() {
   const visibility = useGame((s) => s.visibility);
   const addSlot = useGame((s) => s.addSlot);
   const startMatch = useGame((s) => s.startMatch);
-  const setScreen = useGame((s) => s.setScreen);
   const identity = useIdentity();
+  const navigate = useNavigate();
   const statusMessage = useGame((s) => s.statusMessage);
   const [invite, setInvite] = useState("");
   const localId = record?.playerId ?? participants.find((p) => p.host)?.id ?? "";
@@ -390,11 +391,18 @@ export function LobbyScreen() {
       )}
 
       <div className="mt-auto flex flex-wrap gap-3">
-        <Button variant="ghost" onClick={() => setScreen("menu")}>
+        <Button variant="ghost" onClick={() => void navigate({ to: "/" })}>
           Leave
         </Button>
         {host && (
-          <Button className="ml-auto" disabled={!ready || playCount < 2} onClick={startMatch}>
+          <Button
+            className="ml-auto"
+            disabled={!ready || playCount < 2}
+            onClick={() => {
+              startMatch();
+              if (record?.id) void navigate({ to: "/game/$gameId", params: { gameId: record.id } });
+            }}
+          >
             {ready ? "Start game" : "Waiting on ready"}
           </Button>
         )}

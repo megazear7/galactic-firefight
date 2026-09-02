@@ -16,6 +16,7 @@ import type { UnitType } from "@/game/types";
 import { useIdentity } from "@/lib/identity/provider";
 import { grantGuestAcl, putSharedGame, saveGame } from "@/game/persistence";
 import { useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 
 export function ArmyBuilder() {
   const faction = useGame((s) => s.faction);
@@ -26,11 +27,11 @@ export function ArmyBuilder() {
   const terrainTheme = useGame((s) => s.terrainTheme);
   const army = useGame((s) => s.army);
   const setArmy = useGame((s) => s.setArmy);
-  const setScreen = useGame((s) => s.setScreen);
   const beginBattle = useGame((s) => s.beginBattle);
   const mode = useGame((s) => s.mode);
   const inviteEmail = useGame((s) => s.inviteEmail);
   const identity = useIdentity();
+  const navigate = useNavigate();
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const remain = remainingPoints(faction, points, army);
@@ -156,7 +157,7 @@ export function ArmyBuilder() {
       )}
 
       <div className="mt-auto flex flex-wrap gap-3">
-        <Button variant="ghost" onClick={() => setScreen("setup")}>
+        <Button variant="ghost" onClick={() => void navigate({ to: "/create" })}>
           Back
         </Button>
         <Button variant="outline" onClick={() => setArmy(defaultLoadout(faction, points))}>

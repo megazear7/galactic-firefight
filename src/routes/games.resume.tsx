@@ -3,11 +3,11 @@ import { createFileRoute } from "@tanstack/react-router";
 import { AppSurface } from "@/components/AppSurface";
 import { useGame } from "@/game/store";
 
-export const Route = createFileRoute("/")({ component: Home });
+export const Route = createFileRoute("/games/resume")({ component: ResumeRoute });
 
-function Home() {
+function ResumeRoute() {
   useEffect(() => {
-    useGame.getState().setScreen("menu");
+    useGame.getState().setScreen("resume");
   }, []);
   return <AppSurface />;
 }

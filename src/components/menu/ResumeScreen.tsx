@@ -1,15 +1,15 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { useGame } from "@/game/store";
+import { Link } from "@tanstack/react-router";
 import { deleteGame, listGames } from "@/game/persistence";
 import type { GameRecord } from "@/game/types";
 import { FACTION_NAME } from "@/game/units";
 import { useIdentity } from "@/lib/identity/provider";
+import { useNavigate } from "@tanstack/react-router";
 
 export function ResumeScreen() {
   const identity = useIdentity();
-  const setScreen = useGame((s) => s.setScreen);
-  const loadRecord = useGame((s) => s.loadRecord);
+  const navigate = useNavigate();
   const [games, setGames] = useState<GameRecord[]>([]);
 
   useEffect(() => {
@@ -48,20 +48,14 @@ export function ResumeScreen() {
               >
                 Delete
               </Button>
-              <Button
-                size="sm"
-                onClick={() => {
-                  loadRecord(g);
-                  if (g.battle) setScreen("battle");
-                }}
-              >
-                Continue
+              <Button size="sm" asChild>
+                <Link to="/game/$gameId" params={{ gameId: g.id }}>Continue</Link>
               </Button>
             </li>
           ))}
         </ul>
       )}
-      <Button variant="ghost" className="mt-auto w-fit" onClick={() => setScreen("menu")}>
+      <Button variant="ghost" className="mt-auto w-fit" onClick={() => void navigate({ to: "/" })}>
         Back
       </Button>
     </div>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Flag, Pause, SkipForward, Swords, Target, X } from "lucide-react";
+import { Flag, Menu, SkipForward, Swords, Target, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { actOptions, useGame } from "@/game/store";
 import { UNIT_STATS, SPRITE_SRC } from "@/game/units";
@@ -171,8 +171,9 @@ function SelectedCard({
 
 export function Hud() {
   const battle = useGame((s) => s.battle);
-  const settingsOpen = useGame((s) => s.setSettingsOpen);
+  const setSettingsOpen = useGame((s) => s.setSettingsOpen);
   const end = useGame((s) => s.end);
+  const surrender = useGame((s) => s.surrender);
   const startHotseat = useGame((s) => s.startHotseat);
   const setScreen = useGame((s) => s.setScreen);
   const deselect = useGame((s) => s.deselect);
@@ -184,6 +185,7 @@ export function Hud() {
   );
   const [cardOpen, setCardOpen] = useState(false);
   const [held, setHeld] = useState<{ selected: UnitState; stats: UnitStats } | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     if (showCard && selected && stats) {
@@ -263,9 +265,7 @@ export function Hud() {
             </p>
             <p className="font-display text-lg font-semibold leading-tight">Team {battle.turnTeam}</p>
             <p className="text-xs text-subtle">
-              {yours
-                ? "WASD pan · click-drag to face · or click twice"
-                : battle.mode === "single"
+              {battle.mode === "single"
                   ? "Opposing force"
                   : "Waiting on opponent"}
             </p>
@@ -279,11 +279,55 @@ export function Hud() {
               <span className="hidden sm:inline">End turn</span>
             </Button>
           )}
-          <Button variant="secondary" size="icon" className="pointer-events-auto" onClick={() => settingsOpen(true)} aria-label="Settings">
-            <Pause className="size-4" />
+          <Button
+            variant="secondary"
+            size="icon"
+            className="pointer-events-auto"
+            onClick={() => setMenuOpen(true)}
+            aria-label="Game menu"
+          >
+            <Menu className="size-4" />
           </Button>
         </div>
       </header>
+
+      {menuOpen && (
+        <div
+          className="pointer-events-auto absolute inset-0 z-40 flex items-center justify-center bg-bg/75 p-5 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="game-menu-title"
+        >
+          <div className="w-full max-w-sm rounded-[var(--radius-xl)] border border-border bg-surface p-5 shadow-[var(--shadow-panel)]">
+            <h2 id="game-menu-title" className="font-display text-2xl font-semibold">
+              Game menu
+            </h2>
+            <div className="mt-5 grid gap-2">
+              <Button
+                variant="danger"
+                onClick={() => {
+                  surrender();
+                  setMenuOpen(false);
+                }}
+              >
+                Surrender
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setSettingsOpen(true);
+                }}
+              >
+                Settings
+              </Button>
+              <Button variant="secondary" onClick={() => setMenuOpen(false)}>
+                Return to game
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="pointer-events-none mx-4 mt-1 hidden max-w-sm text-xs text-muted sm:block">
         {battle.log[0] ? <p className="rounded-[var(--radius-md)] bg-bg/70 px-3 py-2">{battle.log[0].text}</p> : null}

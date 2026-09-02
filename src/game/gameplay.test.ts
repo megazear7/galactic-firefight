@@ -691,7 +691,7 @@ describe("fog of war", () => {
 });
 
 describe("activations", () => {
-  it("caps a side at five activations then ends the turn", () => {
+  it("allows every living unit to activate before ending the turn", () => {
     let state = createBattle({
       seed: 7,
       playerFaction: "empire",
@@ -701,9 +701,8 @@ describe("activations", () => {
       first: "empire",
     });
     const living = state.units.filter((u) => u.alive && u.faction === "empire").length;
-    assert.ok(living > 5);
-    assert.equal(activationsCap(state), 5);
-    for (let i = 0; i < 5; i++) {
+    assert.equal(activationsCap(state), living);
+    for (let i = 0; i < living; i++) {
       const u = state.units.find((x) => x.alive && x.faction === "empire" && !x.acted);
       assert.ok(u, `missing ready unit at ${i}`);
       state = waitUnit(selectUnit(state, u.id));

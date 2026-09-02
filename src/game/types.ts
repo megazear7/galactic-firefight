@@ -1,5 +1,4 @@
 export const SAVE_VERSION = 7;
-export const ACTIVATIONS_PER_TURN = 5;
 
 export type Faction = "empire" | "brood";
 export type UnitType =
