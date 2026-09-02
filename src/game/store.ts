@@ -378,7 +378,8 @@ export const useGame = create<Store>((set, get) => ({
     } catch (err) {
       console.warn("game creation failed", err);
       set({
-        statusMessage: err instanceof Error ? `Could not create game: ${err.message}` : "Could not create game.",
+        statusMessage:
+          err instanceof Error ? `Could not create game: ${err.message}` : "Could not create game.",
       });
     }
   },
@@ -911,11 +912,25 @@ export const useGame = create<Store>((set, get) => ({
       return;
     }
     if (shared?.battle) {
-      const mine = userId === hostId ? shared.hostFaction : shared.guestFaction;
+      const local = shared.participants.find(
+        (participant) => participant.userId === userId || (userId === hostId && participant.host),
+      );
+      const mine = local?.faction ?? (userId === hostId ? shared.hostFaction : shared.guestFaction);
+      const localBattle = {
+        ...shared.battle,
+        playerId: local?.id ?? shared.battle.playerId,
+        playerFaction: mine ?? shared.battle.playerFaction,
+        phase:
+          local && shared.battle.turnTeam !== local.team && shared.battle.phase === "select"
+            ? "enemyTurn"
+            : local && shared.battle.turnTeam === local.team && shared.battle.phase === "enemyTurn"
+              ? "select"
+              : shared.battle.phase,
+      };
       startAmbience();
       set({
         record: { ...shared, playerFaction: mine ?? shared.playerFaction },
-        battle: shared.battle,
+        battle: localBattle,
         faction: mine ?? get().faction,
         screen: "battle",
       });
