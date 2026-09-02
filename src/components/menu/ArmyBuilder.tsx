@@ -23,6 +23,7 @@ export function ArmyBuilder() {
   const mapSize = useGame((s) => s.mapSize);
   const terrainDensity = useGame((s) => s.terrainDensity);
   const terrainSize = useGame((s) => s.terrainSize);
+  const terrainTheme = useGame((s) => s.terrainTheme);
   const army = useGame((s) => s.army);
   const setArmy = useGame((s) => s.setArmy);
   const setScreen = useGame((s) => s.setScreen);
@@ -71,6 +72,7 @@ export function ArmyBuilder() {
         mapSize,
         terrainDensity,
         terrainSize,
+        terrainTheme,
         visibility: "private" as const,
         participants: [],
         teamOrder: [],

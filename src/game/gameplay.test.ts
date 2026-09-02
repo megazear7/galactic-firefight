@@ -11,9 +11,9 @@ import { createBattle, confirmShoot, selectUnit, deselectUnit, setActMode, choos
 import { UNIT_STATS, isFaction, unitSpecials } from "./units.ts";
 import { MAP_SLOT_CAP } from "./types.ts";
 import { findPath, pathCost, blockedAt } from "./pathfinding.ts";
-import { circleHitsTerrain, dist, generateMap, idx, MAP_DIMS } from "./map.ts";
+import { circleHitsTerrain, dist, generateMap, idx, isBlocked, MAP_DIMS } from "./map.ts";
 import { enemyVisible, visionMask } from "./vision.ts";
-import { hasUnitModel, pickModelUrl, unitModelSet, unitPose } from "./models.ts";
+import { hasClip, hasDeathClip, hasUnitModel, pickModelUrl, unitModelSet, unitPose } from "./models.ts";
 import { allGameAssetUrls } from "./preload.ts";
 import type { BattleMap, BattleState, UnitState } from "./types.ts";
 
@@ -23,6 +23,8 @@ function floorMap(cols = 8, rows = 8): BattleMap {
     rows,
     tiles: Array.from({ length: cols * rows }, () => "floor" as const),
     seed: 1,
+    theme: "spaceship" as const,
+    blobs: [],
   };
 }
 
@@ -134,6 +136,21 @@ describe("pathfinding", () => {
     const dest = path[path.length - 1];
     assert.ok(dest.col < 8, "should not teleport past move range");
   });
+
+  it("charges double through difficult terrain unless the unit has Fleet", () => {
+    const map = floorMap(14, 6);
+    for (let c = 3; c <= 9; c++) setTile(map, c, 3, "difficult");
+    const start = { col: 1, row: 3 };
+    const goal = { col: 11, row: 3 };
+    const slow = findPath(map, start, goal, [], 0.3, 20, false);
+    const fleet = findPath(map, start, goal, [], 0.3, 20, true);
+    assert.ok(slow && fleet);
+    const geo = pathCost(slow);
+    const hard = pathCost(slow, map, false);
+    const easy = pathCost(fleet, map, true);
+    assert.ok(hard > geo * 1.35, `difficult cost ${hard} vs geometric ${geo}`);
+    assert.ok(Math.abs(easy - geo) < 0.35, `fleet should pay geometric, got ${easy} vs ${geo}`);
+  });
 });
 
 describe("line of sight", () => {
@@ -142,6 +159,18 @@ describe("line of sight", () => {
     setTile(map, 4, 3, "wall");
     assert.equal(hasLos(map, { col: 1, row: 3 }, { col: 7, row: 3 }, [], []), false);
     assert.equal(hasLos(map, { col: 1, row: 1 }, { col: 3, row: 1 }, [], []), true);
+  });
+
+  it("blocks shots through difficult debris but not through doors", () => {
+    const map = floorMap();
+    setTile(map, 4, 3, "difficult");
+    assert.equal(hasLos(map, { col: 1, row: 3 }, { col: 7, row: 3 }), false);
+    setTile(map, 4, 3, "door");
+    assert.equal(hasLos(map, { col: 1, row: 3 }, { col: 7, row: 3 }), true);
+    assert.equal(blockedAt(map, 4, 3, [], 0.3), false);
+    setTile(map, 4, 3, "wall");
+    assert.equal(hasLos(map, { col: 1, row: 3 }, { col: 7, row: 3 }), false);
+    assert.equal(blockedAt(map, 4, 3, [], 0.3), true);
   });
 
   it("blocks ranged fire through another unit", () => {
@@ -273,6 +302,38 @@ describe("map size", () => {
     };
     assert.ok(maxBlob(large) > maxBlob(small), "large bias should make bigger masses");
     assert.ok(maxBlob(small) >= 1);
+  });
+
+  it("stamps overlapping circular infestation masses", () => {
+    const ship = generateMap(21, "medium", { density: 2, size: 2, theme: "spaceship" });
+    const hive = generateMap(21, "medium", { density: 2, size: 3, theme: "infestation" });
+    assert.equal(ship.theme, "spaceship");
+    assert.equal(ship.blobs.length, 0);
+    assert.equal(hive.theme, "infestation");
+    assert.ok(hive.blobs.length >= 6, `expected nests, got ${hive.blobs.length}`);
+    let overlap = false;
+    for (let i = 0; i < hive.blobs.length && !overlap; i++) {
+      for (let j = i + 1; j < hive.blobs.length; j++) {
+        const a = hive.blobs[i];
+        const b = hive.blobs[j];
+        if (dist(a, b) < a.radius + b.radius - 0.25) {
+          overlap = true;
+          break;
+        }
+      }
+    }
+    assert.equal(overlap, true, "nests should overlap");
+    const blocked = hive.tiles.filter((t) => t !== "floor").length;
+    assert.ok(blocked > 10);
+    assert.ok(blocked < hive.tiles.length * 0.6);
+  });
+
+  it("builds wartorn fields with debris, walls, and doors", () => {
+    const map = generateMap(8, "medium", { density: 2, size: 2, theme: "wartorn" });
+    assert.equal(map.theme, "wartorn");
+    assert.ok(map.tiles.includes("difficult"), "debris fields");
+    assert.ok(map.tiles.includes("wall"), "straight walls");
+    assert.ok(map.tiles.includes("door"), "doors in some walls");
   });
 });
 
@@ -523,6 +584,30 @@ describe("fog of war", () => {
     assert.equal(vis[idx(10, 3, map.cols)], false);
   });
 
+  it("reveals the interior of an infestation mass once you can see around it", () => {
+    const map = generateMap(21, "medium", { density: 2, size: 3, theme: "infestation" });
+    const blob = map.blobs.filter((b) => b.radius >= 1.6).sort((a, b) => b.radius - a.radius)[0];
+    assert.ok(blob, "expected a sizable hive mass");
+    let floor: { col: number; row: number } | null = null;
+    const reach = blob.radius + 1.4;
+    for (let row = 0; row < map.rows && !floor; row++) {
+      for (let col = 0; col < map.cols; col++) {
+        if (isBlocked(map, col, row)) continue;
+        const d = dist({ col, row }, blob);
+        if (d > blob.radius + 0.35 && d < reach) {
+          floor = { col, row };
+          break;
+        }
+      }
+    }
+    assert.ok(floor, "expected open ground beside the mass");
+    const viewer = unit({ id: "v", col: floor.col, row: floor.row, type: "soldier" });
+    const vis = visOf(map, viewer);
+    const cc = Math.max(0, Math.min(map.cols - 1, Math.round(blob.col)));
+    const rr = Math.max(0, Math.min(map.rows - 1, Math.round(blob.row)));
+    assert.equal(vis[idx(cc, rr, map.cols)], true, "hive interior should be spotted");
+  });
+
   it("spots a tyrant in the open even though its body is large", () => {
     const map = floorMap(16, 10);
     const viewer = unit({ id: "v", col: 2, row: 5, type: "soldier", team: 1 });
@@ -636,6 +721,7 @@ describe("force codex", () => {
     assert.equal(isFaction("pirates"), false);
     assert.ok(unitSpecials(UNIT_STATS.sniper).some((s) => s.startsWith("Stealth")));
     assert.ok(unitSpecials(UNIT_STATS.broodling).includes("Melee only"));
+    assert.ok(unitSpecials(UNIT_STATS.broodling).some((s) => s.startsWith("Fleet")));
     assert.ok(unitSpecials(UNIT_STATS.tyrant).some((s) => s.startsWith("Burst")));
   });
 });
@@ -680,6 +766,8 @@ describe("unit models", () => {
     assert.match(pickModelUrl("captain", "empire", "ranged", "u-1") ?? "", /empire-captain-ranged-/);
     assert.equal(hasUnitModel("sniper", "empire"), true);
     assert.equal(hasUnitModel("machine_gunner", "empire"), true);
+    assert.equal(hasDeathClip("machine_gunner", "empire"), false);
+    assert.equal(hasClip("soldier", "empire", "dead"), true);
     assert.match(pickModelUrl("machine_gunner", "empire", "move", "u-1") ?? "", /machine-gunner\.glb/);
     assert.match(pickModelUrl("machine_gunner", "empire", "melee", "u-1") ?? "", /machine-gunner\.glb/);
     const sniper = { id: "s", alive: true as const, type: "sniper" as const, faction: "empire" as const };

@@ -43,6 +43,13 @@ function migrateBattle(raw: BattleState | null): BattleState | null {
       ? { ...raw.pendingMove, overwatchDone: raw.pendingMove.overwatchDone ?? false }
       : null,
     explored,
+    map: raw.map
+      ? {
+          ...raw.map,
+          theme: raw.map.theme === "infestation" || raw.map.theme === "wartorn" ? raw.map.theme : "spaceship",
+          blobs: Array.isArray(raw.map.blobs) ? raw.map.blobs : [],
+        }
+      : raw.map,
     actMode: raw.actMode === "fire" ? "fire" : "move",
     playerId: raw.playerId ?? "p-host",
     turnTeam: raw.turnTeam ?? (raw.turn === "brood" ? 2 : 1),
@@ -68,6 +75,7 @@ function migrateGame(raw: GameRecord): GameRecord {
     mapSize: raw.mapSize === "small" || raw.mapSize === "large" ? raw.mapSize : "medium",
     terrainDensity: raw.terrainDensity === 1 || raw.terrainDensity === 3 ? raw.terrainDensity : 2,
     terrainSize: raw.terrainSize === 1 || raw.terrainSize === 3 ? raw.terrainSize : 2,
+    terrainTheme: raw.terrainTheme === "infestation" || raw.terrainTheme === "wartorn" ? raw.terrainTheme : "spaceship",
     visibility: raw.visibility === "public" ? "public" : "private",
     passcode: raw.passcode,
     participants: raw.participants ?? [],
@@ -358,22 +366,105 @@ function writeLocalPublic(games: PublicListing[]) {
   }
 }
 
+function collectListing(byId: Map<string, PublicListing>, g: PublicListing | null | undefined) {
+  if (!g?.id) return;
+  const prev = byId.get(g.id);
+  if (!prev || (g.updatedAt ?? "") >= (prev.updatedAt ?? "")) byId.set(g.id, g);
+}
+
+function asListing(data: unknown): PublicListing | null {
+  if (!data || typeof data !== "object") return null;
+  const g = data as Partial<PublicListing>;
+  if (typeof g.id !== "string") return null;
+  return g as PublicListing;
+}
+
+export async function getPublicGame(
+  client: UserDataClient | null,
+  hostId: string | undefined,
+  gameId: string,
+): Promise<GameRecord | null> {
+  const local = readLocal().find((g) => g.id === gameId) ?? null;
+  if (!client || !hostId) return local;
+  try {
+    const rec = await client.get<GameRecord>({
+      targetUserId: hostId,
+      app: MEGAZEAR_APP,
+      visibility: "public",
+      path: `games/${gameId}`,
+    });
+    return migrateGame(rec.data);
+  } catch {
+    const shared = await getSharedGame(client, hostId, gameId);
+    return shared ?? local;
+  }
+}
+
 export async function listPublicLobbies(client: UserDataClient | null): Promise<PublicListing[]> {
-  const local = readLocalPublic();
-  if (!client) return local.filter((g) => g.openSlots >= 0);
+  const byId = new Map<string, PublicListing>();
+  for (const g of readLocalPublic()) collectListing(byId, g);
+  if (!client) {
+    return [...byId.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+  try {
+    const listed = await client.list({
+      app: MEGAZEAR_APP,
+      visibility: "public",
+      path: "lobbies",
+    });
+    for (const entry of listed.keys ?? []) {
+      const raw = (entry.path || entry.key || "").replace(/^\/+/, "");
+      const cut = raw.indexOf("lobbies/");
+      const path = cut >= 0 ? raw.slice(cut) : raw.startsWith("lobbies") ? raw : "";
+      if (!path || path === "lobbies/index" || path === "lobbies") continue;
+      try {
+        const rec = await client.get<PublicListing>({
+          app: MEGAZEAR_APP,
+          visibility: "public",
+          path,
+        });
+        collectListing(byId, asListing(rec.data));
+      } catch {
+        /* skip one */
+      }
+    }
+  } catch {
+    /* prefix list is optional */
+  }
   try {
     const rec = await client.get<{ games: PublicListing[] }>({
       app: MEGAZEAR_APP,
       visibility: "public",
       path: "lobbies/index",
     });
-    const remote = rec.data.games ?? [];
-    const byId = new Map<string, PublicListing>();
-    for (const g of [...local, ...remote]) byId.set(g.id, g);
-    return [...byId.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    for (const g of rec.data.games ?? []) collectListing(byId, g);
   } catch {
-    return local;
+    /* no shared index yet */
   }
+  return [...byId.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+async function mergePublicIndex(client: UserDataClient, listing: PublicListing | null, removeId?: string) {
+  let games: PublicListing[] = [];
+  try {
+    const rec = await client.get<{ games: PublicListing[] }>({
+      app: MEGAZEAR_APP,
+      visibility: "public",
+      path: "lobbies/index",
+    });
+    games = rec.data.games ?? [];
+  } catch {
+    /* start empty */
+  }
+  games = games.filter((g) => g.id !== (listing?.id ?? removeId));
+  if (listing) games.unshift(listing);
+  games = games.slice(0, 80);
+  await client.put({
+    app: MEGAZEAR_APP,
+    visibility: "public",
+    path: "lobbies/index",
+    data: { version: SAVE_VERSION, games },
+  });
 }
 
 export async function upsertPublicLobby(client: UserDataClient | null, rec: GameRecord) {
@@ -396,9 +487,10 @@ export async function upsertPublicLobby(client: UserDataClient | null, rec: Game
     await client.put({
       app: MEGAZEAR_APP,
       visibility: "public",
-      path: "lobbies/index",
-      data: { version: SAVE_VERSION, games: local },
+      path: `games/${rec.id}`,
+      data: rec,
     });
+    await mergePublicIndex(client, listing);
   } catch (err) {
     console.warn("public lobby publish failed", err);
   }
@@ -408,18 +500,16 @@ export async function removePublicLobby(client: UserDataClient | null, id: strin
   writeLocalPublic(readLocalPublic().filter((g) => g.id !== id));
   if (!client) return;
   try {
-    const rec = await client.get<{ games: PublicListing[] }>({
+    await client.delete({
       app: MEGAZEAR_APP,
       visibility: "public",
-      path: "lobbies/index",
+      path: `lobbies/${id}`,
     });
-    const games = (rec.data.games ?? []).filter((g) => g.id !== id);
-    await client.put({
-      app: MEGAZEAR_APP,
-      visibility: "public",
-      path: "lobbies/index",
-      data: { version: SAVE_VERSION, games },
-    });
+  } catch {
+    /* ignore */
+  }
+  try {
+    await mergePublicIndex(client, null, id);
   } catch {
     /* ignore */
   }

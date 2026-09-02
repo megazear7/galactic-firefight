@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useGame } from "@/game/store";
 import { FACTION_NAME, SPRITE_SRC, UNIT_STATS, armyCost, factionUnits, freeLeaders, leaderType, maxExtraLeaders, remainingPoints } from "@/game/units";
-import { MAP_SIZE_LABEL, TERRAIN_DENSITY_LABEL, TERRAIN_SIZE_LABEL } from "@/game/map";
+import { MAP_SIZE_LABEL, TERRAIN_DENSITY_LABEL, TERRAIN_SIZE_LABEL, TERRAIN_THEME_LABEL } from "@/game/map";
 import { PLAYER_PALETTE, type Faction, type Participant, type TerrainBias, type UnitType } from "@/game/types";
 import { humansReady, playable, slotCap } from "@/game/lobby";
 import { cn } from "@/lib/utils";
@@ -195,8 +195,10 @@ export function LobbyScreen() {
   const points = useGame((s) => s.points);
   const terrainDensity = useGame((s) => s.terrainDensity);
   const terrainSize = useGame((s) => s.terrainSize);
+  const terrainTheme = useGame((s) => s.terrainTheme);
   const setTerrainDensity = useGame((s) => s.setTerrainDensity);
   const setTerrainSize = useGame((s) => s.setTerrainSize);
+  const setTerrainTheme = useGame((s) => s.setTerrainTheme);
   const visibility = useGame((s) => s.visibility);
   const addSlot = useGame((s) => s.addSlot);
   const startMatch = useGame((s) => s.startMatch);
@@ -223,10 +225,40 @@ export function LobbyScreen() {
             {participants.length}/{cap} slots
           </div>
           <div>
-            {TERRAIN_DENSITY_LABEL[terrainDensity]} density · {TERRAIN_SIZE_LABEL[terrainSize]} cover
+            {TERRAIN_THEME_LABEL[terrainTheme]} · {TERRAIN_DENSITY_LABEL[terrainDensity]} density ·{" "}
+            {TERRAIN_SIZE_LABEL[terrainSize]} cover
           </div>
         </dl>
       </div>
+
+      <section>
+        <Label>Terrain theme</Label>
+        <p className="mt-1 text-sm text-muted">Steel decks, hive growth, or a ruined street.</p>
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          {(["spaceship", "infestation", "wartorn"] as const).map((theme) => (
+            <button
+              key={theme}
+              type="button"
+              disabled={!host}
+              onClick={() => setTerrainTheme(theme)}
+              className={cn(
+                "h-[4.5rem] rounded-[var(--radius-md)] border px-3 text-left",
+                terrainTheme === theme ? "border-accent bg-surface-2" : "border-border bg-surface",
+                !host && "cursor-default opacity-80",
+              )}
+            >
+              <span className="font-display text-lg leading-tight">{TERRAIN_THEME_LABEL[theme]}</span>
+              <span className="block text-[11px] leading-snug text-subtle">
+                {theme === "spaceship"
+                  ? "Cargo crates and bulkheads"
+                  : theme === "infestation"
+                    ? "Overlapping bug masses"
+                    : "Debris fields, walls, and doors"}
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
 
       <div className="grid gap-6 sm:grid-cols-2">
         <ScaleRow

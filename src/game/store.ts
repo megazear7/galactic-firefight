@@ -25,6 +25,7 @@ import type { ActMode } from "./types";
 import { meleeEnemies, rangedTargets } from "./combat";
 import { sfx, unlockAudio, applyVolumes, startAmbience, stopAmbience } from "./audio";
 import {
+  getPublicGame,
   getSharedGame,
   grantGuestAcl,
   loadSettings,
@@ -51,6 +52,7 @@ import type {
   Settings,
   SlotKind,
   TerrainBias,
+  TerrainTheme,
   UnitState,
 } from "./types";
 import { DEFAULT_SETTINGS } from "./types";
@@ -83,6 +85,7 @@ type Store = {
   mapSize: MapSize;
   terrainDensity: TerrainBias;
   terrainSize: TerrainBias;
+  terrainTheme: TerrainTheme;
   faction: Faction;
   army: ArmyLoadout;
   record: GameRecord | null;
@@ -102,6 +105,8 @@ type Store = {
   statusMessage: string | null;
   aiTimer: number;
   resolveTimer: number;
+  dataClient: UserDataClient | null;
+  setDataClient: (c: UserDataClient | null) => void;
   setScreen: (s: Screen) => void;
   setSettingsOpen: (v: boolean) => void;
   patchSettings: (p: Partial<Settings>) => void;
@@ -110,6 +115,7 @@ type Store = {
   setMapSize: (s: MapSize) => void;
   setTerrainDensity: (n: TerrainBias) => void;
   setTerrainSize: (n: TerrainBias) => void;
+  setTerrainTheme: (t: TerrainTheme) => void;
   setFaction: (f: Faction) => void;
   setArmy: (a: ArmyLoadout) => void;
   setInviteEmail: (v: string) => void;
@@ -123,7 +129,11 @@ type Store = {
   toggleReady: (id: string) => void;
   startMatch: () => void;
   startHotseat: () => void;
-  joinListing: (listing: PublicListing, passcode: string, user?: { id?: string; name?: string; email?: string } | null) => string | null;
+  joinListing: (
+    listing: PublicListing,
+    passcode: string,
+    user?: { id?: string; name?: string; email?: string } | null,
+  ) => Promise<string | null>;
   beginBattle: (opts?: { enemyArmy?: ArmyLoadout; first?: Faction }) => void;
   loadRecord: (g: GameRecord) => void;
   select: (id: string) => void;
@@ -159,6 +169,7 @@ function blankRecord(partial: Partial<GameRecord>): GameRecord {
     mapSize: "medium",
     terrainDensity: 2,
     terrainSize: 2,
+    terrainTheme: "spaceship",
     visibility: "private",
     participants: [],
     teamOrder: [],
@@ -179,6 +190,7 @@ export const useGame = create<Store>((set, get) => ({
   mapSize: "medium" as MapSize,
   terrainDensity: 2 as TerrainBias,
   terrainSize: 2 as TerrainBias,
+  terrainTheme: "spaceship" as TerrainTheme,
   faction: "empire",
   army: defaultLoadout("empire", 100),
   record: null,
@@ -198,6 +210,8 @@ export const useGame = create<Store>((set, get) => ({
   statusMessage: null,
   aiTimer: 0,
   resolveTimer: 0,
+  dataClient: null,
+  setDataClient: (dataClient) => set({ dataClient }),
   setScreen: (screen) => {
     if (screen === "battle") startAmbience();
     else stopAmbience();
@@ -228,6 +242,7 @@ export const useGame = create<Store>((set, get) => ({
       participants: [],
       terrainDensity: 2,
       terrainSize: 2,
+      terrainTheme: "spaceship",
     });
   },
   setPoints: (points) => {
@@ -243,14 +258,30 @@ export const useGame = create<Store>((set, get) => ({
     const rec = get().record;
     const next = rec ? { ...rec, terrainDensity, updatedAt: new Date().toISOString() } : rec;
     set({ terrainDensity, record: next });
-    if (next) void saveGame(null, next);
+    if (next) {
+      void saveGame(get().dataClient, next);
+      void upsertPublicLobby(get().dataClient, next);
+    }
   },
   setTerrainSize: (terrainSize) => {
     sfx.ui();
     const rec = get().record;
     const next = rec ? { ...rec, terrainSize, updatedAt: new Date().toISOString() } : rec;
     set({ terrainSize, record: next });
-    if (next) void saveGame(null, next);
+    if (next) {
+      void saveGame(get().dataClient, next);
+      void upsertPublicLobby(get().dataClient, next);
+    }
+  },
+  setTerrainTheme: (terrainTheme) => {
+    sfx.ui();
+    const rec = get().record;
+    const next = rec ? { ...rec, terrainTheme, updatedAt: new Date().toISOString() } : rec;
+    set({ terrainTheme, record: next });
+    if (next) {
+      void saveGame(get().dataClient, next);
+      void upsertPublicLobby(get().dataClient, next);
+    }
   },
   setFaction: (faction) => {
     sfx.ui();
@@ -265,7 +296,7 @@ export const useGame = create<Store>((set, get) => ({
     set({ visibility });
   },
   confirmCreate: (user) => {
-    const { points, mapSize, terrainDensity, terrainSize, gameName, passcode, visibility, faction } = get();
+    const { points, mapSize, terrainDensity, terrainSize, terrainTheme, gameName, passcode, visibility, faction } = get();
     const participants = defaultMatch(points, {
       name: user?.name || user?.email || "You",
       userId: user?.id,
@@ -277,6 +308,7 @@ export const useGame = create<Store>((set, get) => ({
       mapSize,
       terrainDensity,
       terrainSize,
+      terrainTheme,
       visibility,
       passcode: passcode.trim() || undefined,
       participants,
@@ -289,8 +321,8 @@ export const useGame = create<Store>((set, get) => ({
     });
     sfx.confirm();
     set({ record: rec, participants, screen: "lobby", faction: participants[0].faction, army: participants[0].army });
-    void saveGame(null, rec);
-    void upsertPublicLobby(null, rec);
+    void saveGame(get().dataClient, rec);
+    void upsertPublicLobby(get().dataClient, rec);
   },
   addSlot: (kind, email) => {
     const { participants, mapSize, points, visibility } = get();
@@ -319,8 +351,8 @@ export const useGame = create<Store>((set, get) => ({
     const rec = get().record ? { ...get().record!, participants: next, updatedAt: new Date().toISOString() } : get().record;
     set({ participants: next, record: rec });
     if (rec) {
-      void saveGame(null, rec);
-      void upsertPublicLobby(null, rec);
+      void saveGame(get().dataClient, rec);
+      void upsertPublicLobby(get().dataClient, rec);
     }
   },
   removeSlot: (id) => {
@@ -329,7 +361,12 @@ export const useGame = create<Store>((set, get) => ({
     if (!target || target.host) return;
     sfx.ui();
     const next = participants.filter((p) => p.id !== id);
-    set({ participants: next, record: record ? { ...record, participants: next } : record });
+    const rec = record ? { ...record, participants: next, updatedAt: new Date().toISOString() } : record;
+    set({ participants: next, record: rec });
+    if (rec) {
+      void saveGame(get().dataClient, rec);
+      void upsertPublicLobby(get().dataClient, rec);
+    }
   },
   patchParticipant: (id, patch) => {
     const { participants, record, points } = get();
@@ -342,13 +379,23 @@ export const useGame = create<Store>((set, get) => ({
       }
       return merged;
     });
-    set({ participants: next, record: record ? { ...record, participants: next } : record });
+    const rec = record ? { ...record, participants: next, updatedAt: new Date().toISOString() } : record;
+    set({ participants: next, record: rec });
+    if (rec) {
+      void saveGame(get().dataClient, rec);
+      void upsertPublicLobby(get().dataClient, rec);
+    }
   },
   toggleReady: (id) => {
     const { participants, record } = get();
     sfx.ui();
     const next = participants.map((p) => (p.id === id ? { ...p, ready: !p.ready } : p));
-    set({ participants: next, record: record ? { ...record, participants: next } : record });
+    const rec = record ? { ...record, participants: next, updatedAt: new Date().toISOString() } : record;
+    set({ participants: next, record: rec });
+    if (rec) {
+      void saveGame(get().dataClient, rec);
+      void upsertPublicLobby(get().dataClient, rec);
+    }
   },
   startHotseat: () => {
     const battle = get().battle;
@@ -357,7 +404,7 @@ export const useGame = create<Store>((set, get) => ({
     set({ battle: beginHotseat(battle) });
   },
   startMatch: () => {
-    const { record, participants, points, mapSize, terrainDensity, terrainSize, mode } = get();
+    const { record, participants, points, mapSize, terrainDensity, terrainSize, terrainTheme, mode } = get();
     if (!humansReady(participants)) return;
     const play = participants.filter(playable);
     if (play.length < 2) return;
@@ -369,6 +416,7 @@ export const useGame = create<Store>((set, get) => ({
       mapSize,
       terrainDensity,
       terrainSize,
+      terrainTheme,
       participants: play,
       localPlayerId: localId,
       teamOrder,
@@ -386,19 +434,18 @@ export const useGame = create<Store>((set, get) => ({
       playerFaction: battle.playerFaction,
       terrainDensity,
       terrainSize,
+      terrainTheme,
     };
     sfx.confirm();
     startAmbience();
     set({ battle, record: rec, screen: "battle", participants });
-    void saveGame(null, rec);
-    void removePublicLobby(null, rec.id);
+    void saveGame(get().dataClient, rec);
+    void removePublicLobby(get().dataClient, rec.id);
   },
-  joinListing: (listing, code, user) => {
-    const recs = typeof window === "undefined" ? [] : [];
+  joinListing: async (listing, code, user) => {
+    const client = get().dataClient;
     const record = get().record;
-    // Prefer the matching local save
-    const local = record?.id === listing.id ? record : null;
-    let game = local;
+    let game = record?.id === listing.id ? record : null;
     if (!game) {
       try {
         const raw = localStorage.getItem("gff.games.v1");
@@ -408,7 +455,14 @@ export const useGame = create<Store>((set, get) => ({
         game = null;
       }
     }
-    if (!game) return "Could not find that game on this device. Ask the host for an invite link.";
+    if (!game) {
+      game = await getPublicGame(client, listing.hostId, listing.id);
+    }
+    if (!game) {
+      return client
+        ? "Could not load that table from the host. They may be offline, or you need to sign in."
+        : "Sign in to join public tables from other commanders.";
+    }
     if (game.status !== "lobby") return "That game has already started.";
     if (!passcodeOk(game.passcode, code)) return "Wrong pass code.";
     const claimed = claimOpenSlot(
@@ -433,11 +487,16 @@ export const useGame = create<Store>((set, get) => ({
       mapSize: next.mapSize,
       terrainDensity: next.terrainDensity ?? 2,
       terrainSize: next.terrainSize ?? 2,
+      terrainTheme:
+        next.terrainTheme === "infestation" || next.terrainTheme === "wartorn" ? next.terrainTheme : "spaceship",
       visibility: next.visibility,
       gameName: next.name,
     });
-    void saveGame(null, next);
-    void upsertPublicLobby(null, next);
+    void saveGame(client, next);
+    void upsertPublicLobby(client, next);
+    if (client && listing.hostId) {
+      void putSharedGame(client, listing.hostId, listing.id, next);
+    }
     return null;
   },
   beginBattle: (opts) => {
@@ -447,7 +506,7 @@ export const useGame = create<Store>((set, get) => ({
       return;
     }
     unlockAudio(get().settings);
-    const { faction, army, points, mapSize, terrainDensity, terrainSize, mode, record } = get();
+    const { faction, army, points, mapSize, terrainDensity, terrainSize, terrainTheme, mode, record } = get();
     const enemyFaction: Faction = faction === "empire" ? "brood" : "empire";
     const enemyArmy = opts?.enemyArmy ?? defaultEnemyArmy(enemyFaction, points);
     const seed = record?.seed ?? ((Math.random() * 1e9) | 0);
@@ -462,6 +521,7 @@ export const useGame = create<Store>((set, get) => ({
       mapSize: record?.mapSize ?? mapSize,
       terrainDensity: record?.terrainDensity ?? terrainDensity,
       terrainSize: record?.terrainSize ?? terrainSize,
+      terrainTheme: record?.terrainTheme ?? terrainTheme,
     });
     const rec =
       record ??
@@ -480,7 +540,7 @@ export const useGame = create<Store>((set, get) => ({
     sfx.confirm();
     startAmbience();
     set({ battle, record: rec, screen: "battle", statusMessage: null });
-    void saveGame(null, rec);
+    void saveGame(get().dataClient, rec);
   },
   loadRecord: (g) => {
     unlockAudio(get().settings);
@@ -494,6 +554,7 @@ export const useGame = create<Store>((set, get) => ({
       mapSize: g.mapSize ?? "medium",
       terrainDensity: g.terrainDensity ?? 2,
       terrainSize: g.terrainSize ?? 2,
+      terrainTheme: g.terrainTheme === "infestation" || g.terrainTheme === "wartorn" ? g.terrainTheme : "spaceship",
       visibility: g.visibility ?? "private",
       participants: g.participants ?? [],
       gameName: g.name,
@@ -671,7 +732,12 @@ export const useGame = create<Store>((set, get) => ({
   },
   persist: (client) => {
     const { record, battle } = get();
-    if (!record || !battle) return;
+    if (!record) return;
+    if (!battle) {
+      void saveGame(client, record);
+      void upsertPublicLobby(client, record);
+      return;
+    }
     const status: GameRecord["status"] =
       battle.winner === (record.participants.find((p) => p.id === record.playerId)?.team ?? 1)
         ? "victory"

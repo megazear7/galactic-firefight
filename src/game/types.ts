@@ -1,4 +1,4 @@
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 7;
 export const ACTIVATIONS_PER_TURN = 5;
 
 export type Faction = "empire" | "brood";
@@ -15,6 +15,7 @@ export type PointScale = 100 | 200 | 300;
 export type MapSize = "small" | "medium" | "large";
 /** 1–3 bias for map clutter. Always mixed; this only tilts the generator. */
 export type TerrainBias = 1 | 2 | 3;
+export type TerrainTheme = "spaceship" | "infestation" | "wartorn";
 export type GraphicsMode = "sprites" | "models";
 export type PlayMode = "single" | "multi";
 export type SlotKind = "human" | "local" | "ai" | "open" | "invite";
@@ -68,7 +69,14 @@ export type PublicListing = {
   updatedAt: string;
 };
 
-export type TileKind = "floor" | "wall" | "structure";
+export type TileKind = "floor" | "wall" | "structure" | "difficult" | "door";
+
+export type TerrainBlob = {
+  col: number;
+  row: number;
+  radius: number;
+  kind: "wall" | "structure";
+};
 
 export type UnitStats = {
   type: UnitType;
@@ -121,6 +129,8 @@ export type BattleMap = {
   rows: number;
   tiles: TileKind[];
   seed: number;
+  theme: TerrainTheme;
+  blobs: TerrainBlob[];
 };
 
 export type LogLine = {
@@ -215,6 +225,7 @@ export type GameRecord = {
   mapSize: MapSize;
   terrainDensity: TerrainBias;
   terrainSize: TerrainBias;
+  terrainTheme: TerrainTheme;
   visibility: GameVisibility;
   passcode?: string;
   participants: Participant[];

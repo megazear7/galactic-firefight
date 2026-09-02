@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import * as THREE from "three";
-import { TILE, mulberry32, tileToWorld, worldToPoint } from "@/game/map";
-import type { BattleMap } from "@/game/types";
+import { TILE, idx, inBounds, mulberry32, tileToWorld, worldToPoint } from "@/game/map";
+import type { BattleMap, TerrainBlob } from "@/game/types";
 import type { ThreeEvent } from "@react-three/fiber";
 
 const loader = new THREE.TextureLoader();
@@ -81,7 +81,173 @@ function fillPattern(
   ctx.restore();
 }
 
+function paintInfestationGround(map: BattleMap, imgs: Record<string, HTMLImageElement>) {
+  const { cols, rows, seed, blobs } = map;
+  const canvas = document.createElement("canvas");
+  canvas.width = cols * CELL;
+  canvas.height = rows * CELL;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return canvas;
+  const rand = mulberry32((seed || 1) ^ 0x9e3779b9);
+  const w = canvas.width;
+  const h = canvas.height;
+
+  ctx.fillStyle = "#7a6554";
+  ctx.fillRect(0, 0, w, h);
+  fillPattern(ctx, imgs.rust, 0.62, 12, 8, 0.38);
+
+  for (let r = -1; r <= rows; r++) {
+    for (let c = -1; c <= cols; c++) {
+      const n = fbm(c * 0.16 + seed * 0.003, r * 0.16);
+      const n2 = fbm(c * 0.38 + 6.1, r * 0.36);
+      const h1 = hash2(c + 3, r + 11);
+      const h2 = hash2(c + 17, r + 5);
+      const cx = (c + 0.5) * CELL + (h1 - 0.5) * CELL * 0.72;
+      const cy = (r + 0.5) * CELL + (h2 - 0.5) * CELL * 0.72;
+      const rx = CELL * (0.38 + n * 0.85 + h1 * 0.2);
+      const ry = CELL * (0.34 + n2 * 0.9 + h2 * 0.18);
+      let color = "#8a6e58";
+      if (n < 0.26) color = "#5c4a3c";
+      else if (n < 0.42) color = "#7a5c48";
+      else if (n < 0.58) color = "#9a7860";
+      else if (n < 0.72) color = "#c49a70";
+      else if (n < 0.84) color = "#b8a46a";
+      else color = "#d0b090";
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rx, ry, h1 * Math.PI, 0, Math.PI * 2);
+      ctx.fill();
+      if (n2 > 0.62 && n < 0.5) {
+        ctx.fillStyle = "rgba(90, 48, 40, 0.28)";
+        ctx.beginPath();
+        ctx.ellipse(cx + (h2 - 0.5) * 10, cy, rx * 0.45, ry * 0.38, h2 * 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  ctx.save();
+  ctx.globalCompositeOperation = "overlay";
+  fillPattern(ctx, imgs.rust, 0.5, 40, 18, 0.28);
+  ctx.restore();
+  ctx.globalCompositeOperation = "source-over";
+
+  const remnant = new Path2D();
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const n = fbm(c * 0.16 + seed * 0.003, r * 0.16);
+      const n2 = fbm(c * 0.38 + 6.1, r * 0.36);
+      if (n2 < 0.78 || n > 0.55) continue;
+      const h1 = hash2(c + 41, r + 23);
+      const x = c * CELL + h1 * 10;
+      const y = r * CELL + hash2(c, r + 9) * 10;
+      remnant.rect(x, y, CELL * (0.35 + h1 * 0.4), CELL * (0.28 + (1 - h1) * 0.35));
+    }
+  }
+  ctx.save();
+  ctx.clip(remnant);
+  fillPattern(ctx, imgs.plates, 0.28, 8, 16, 0.55);
+  fillPattern(ctx, imgs.grate, 0.4, 20, 4, 0.25);
+  ctx.restore();
+
+  ctx.strokeStyle = "rgba(62, 42, 32, 0.45)";
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  const cracks = 10 + Math.floor(rand() * 8);
+  for (let i = 0; i < cracks; i++) {
+    let x = rand() * w;
+    let y = rand() * h;
+    ctx.lineWidth = 1.4 + rand() * 4.2;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    const steps = 14 + Math.floor(rand() * 22);
+    for (let s = 0; s < steps; s++) {
+      x += (rand() - 0.48) * 28;
+      y += (rand() - 0.48) * 28;
+      ctx.lineTo(x, y);
+      if (rand() > 0.82) {
+        ctx.lineTo(x + (rand() - 0.5) * 22, y + (rand() - 0.5) * 22);
+        ctx.moveTo(x, y);
+      }
+    }
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = "rgba(140, 62, 48, 0.22)";
+  const pools = 8 + Math.floor(rand() * 10);
+  for (let i = 0; i < pools; i++) {
+    ctx.beginPath();
+    ctx.ellipse(rand() * w, rand() * h, 18 + rand() * 42, 12 + rand() * 28, rand() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  for (const blob of blobs) {
+    const cx = (blob.col + 0.5) * CELL;
+    const cy = (blob.row + 0.5) * CELL;
+    const rad = Math.max(CELL, blob.radius * CELL * 1.15);
+    const stain = ctx.createRadialGradient(cx, cy, rad * 0.15, cx, cy, rad);
+    stain.addColorStop(0, "rgba(180, 110, 70, 0.0)");
+    stain.addColorStop(0.55, "rgba(160, 90, 58, 0.18)");
+    stain.addColorStop(1, "rgba(120, 80, 55, 0.0)");
+    ctx.fillStyle = stain;
+    ctx.beginPath();
+    ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  return canvas;
+}
+
+function paintWartornGround(map: BattleMap, imgs: Record<string, HTMLImageElement>) {
+  const { cols, rows, seed, tiles } = map;
+  const canvas = document.createElement("canvas");
+  canvas.width = cols * CELL;
+  canvas.height = rows * CELL;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return canvas;
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.fillStyle = "#6a6460";
+  ctx.fillRect(0, 0, w, h);
+  fillPattern(ctx, imgs.plates, 0.32, 0, 0, 0.45);
+  fillPattern(ctx, imgs.rust, 0.5, 24, 12, 0.35);
+  for (let r = -1; r <= rows; r++) {
+    for (let c = -1; c <= cols; c++) {
+      const n = fbm(c * 0.18 + seed * 0.004, r * 0.18);
+      const h1 = hash2(c + 2, r + 9);
+      const h2 = hash2(c + 13, r + 4);
+      ctx.fillStyle = n < 0.34 ? "#5a534c" : n < 0.55 ? "#7a7268" : n < 0.72 ? "#8a8074" : "#9a8e80";
+      ctx.beginPath();
+      ctx.ellipse(
+        (c + 0.5) * CELL + (h1 - 0.5) * 16,
+        (r + 0.5) * CELL + (h2 - 0.5) * 16,
+        CELL * (0.4 + n * 0.7),
+        CELL * (0.32 + h2 * 0.7),
+        h1 * Math.PI,
+        0,
+        Math.PI * 2,
+      );
+      ctx.fill();
+    }
+  }
+  ctx.save();
+  ctx.globalCompositeOperation = "multiply";
+  fillPattern(ctx, imgs.rust, 0.4, 8, 30, 0.22);
+  ctx.restore();
+  ctx.globalCompositeOperation = "source-over";
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (tiles[r * cols + c] !== "door") continue;
+      ctx.fillStyle = "#4a4640";
+      ctx.fillRect(c * CELL + 4, r * CELL + 4, CELL - 8, CELL - 8);
+    }
+  }
+  return canvas;
+}
+
 function paintGround(map: BattleMap, imgs: Record<string, HTMLImageElement>) {
+  if (map.theme === "infestation") return paintInfestationGround(map, imgs);
+  if (map.theme === "wartorn") return paintWartornGround(map, imgs);
   const { cols, rows, tiles, seed } = map;
   const canvas = document.createElement("canvas");
   canvas.width = cols * CELL;
@@ -187,6 +353,65 @@ function paintGround(map: BattleMap, imgs: Record<string, HTMLImageElement>) {
   return canvas;
 }
 
+function blobRevealed(blob: TerrainBlob, map: BattleMap, explored: boolean[]) {
+  const reach = blob.radius + 0.55;
+  const r2 = reach * reach;
+  const c0 = Math.floor(blob.col - reach);
+  const c1 = Math.ceil(blob.col + reach);
+  const r0 = Math.floor(blob.row - reach);
+  const r1 = Math.ceil(blob.row + reach);
+  for (let r = r0; r <= r1; r++) {
+    for (let c = c0; c <= c1; c++) {
+      if (!inBounds(c, r, map)) continue;
+      const dx = c - blob.col;
+      const dy = r - blob.row;
+      if (dx * dx + dy * dy > r2) continue;
+      if (explored[idx(c, r, map.cols)]) return true;
+    }
+  }
+  return false;
+}
+
+function InfestationMound({
+  blob,
+  map,
+  explored,
+  rust,
+}: {
+  blob: TerrainBlob;
+  map: BattleMap;
+  explored: boolean[];
+  rust: THREE.Texture;
+}) {
+  if (!blobRevealed(blob, map, explored)) return null;
+  const p = tileToWorld(blob.col, blob.row, map);
+  const tall = blob.kind === "structure";
+  const h = tall ? 1.55 : 0.82;
+  const span = Math.max(TILE * 0.9, blob.radius * TILE * 2.05);
+  const jitter = hash2(Math.round(blob.col * 10), Math.round(blob.row * 10));
+  return (
+    <mesh
+      position={[p.x, h * 0.42, p.z]}
+      scale={[span * (0.88 + jitter * 0.28), h, span * (0.92 + (1 - jitter) * 0.22)]}
+      rotation={[0, jitter * Math.PI * 2, 0]}
+      castShadow
+      receiveShadow
+      renderOrder={5}
+      onPointerDown={(e) => {
+        e.stopPropagation();
+      }}
+    >
+      <sphereGeometry args={[0.5, 16, 12]} />
+      <meshStandardMaterial
+        map={rust}
+        color={tall ? "#e0b07a" : "#d4a06c"}
+        roughness={0.78}
+        metalness={0.04}
+      />
+    </mesh>
+  );
+}
+
 export function Ground({
   map,
   explored,
@@ -204,6 +429,7 @@ export function Ground({
   const plates = useTileTexture("/assets/ground/plates.jpg", map.cols / 7, map.rows / 7);
   const crateTex = useTileTexture("/assets/ground/crate.jpg", 1, 1);
   const bulkheadTex = useTileTexture("/assets/ground/bulkhead.jpg", 1, 1.2);
+  const rustTex = useTileTexture("/assets/ground/rust.jpg", 1.4, 1.4);
 
   useEffect(() => {
     let dead = false;
@@ -228,10 +454,11 @@ export function Ground({
       tex?.dispose();
       setGround(null);
     };
-  }, [map.seed, map.cols, map.rows]);
+  }, [map.seed, map.cols, map.rows, map.theme]);
 
   const w = map.cols * TILE;
   const h = map.rows * TILE;
+  const infestation = map.theme === "infestation";
   const pick = (e: ThreeEvent<PointerEvent>) => worldToPoint(e.point.x, e.point.z, map);
 
   return (
@@ -265,38 +492,67 @@ export function Ground({
         <planeGeometry args={[w + TILE, h + TILE]} />
         <meshStandardMaterial
           map={ground ?? plates}
-          color="#c4c0b8"
-          roughness={0.82}
-          metalness={0.18}
+          color={infestation ? "#d2c0a8" : "#c4c0b8"}
+          roughness={infestation ? 0.9 : 0.82}
+          metalness={infestation ? 0.04 : 0.18}
         />
       </mesh>
-      {map.tiles.map((kind, i) => {
-        if (kind === "floor") return null;
-        if (!explored[i]) return null;
-        const col = i % map.cols;
-        const row = Math.floor(i / map.cols);
-        const p = tileToWorld(col, row, map);
-        const tall = kind === "structure";
-        return (
-          <mesh
-            key={i}
-            position={[p.x, tall ? 1.15 : 0.55, p.z]}
-            castShadow
-            receiveShadow
-            onPointerDown={(e) => {
-              e.stopPropagation();
-            }}
-          >
-            <boxGeometry args={[TILE * 0.92, tall ? 2.3 : 1.1, TILE * 0.92]} />
-            <meshStandardMaterial
-              map={tall ? bulkheadTex : crateTex}
-              color="#d8d4cc"
-              roughness={0.72}
-              metalness={0.22}
+      {map.theme === "infestation"
+        ? map.blobs.map((blob, i) => (
+            <InfestationMound
+              key={`${blob.col}:${blob.row}:${i}`}
+              blob={blob}
+              map={map}
+              explored={explored}
+              rust={rustTex}
             />
-          </mesh>
-        );
-      })}
+          ))
+        : map.tiles.map((kind, i) => {
+            if (kind === "floor" || kind === "door") return null;
+            if (!explored[i]) return null;
+            const col = i % map.cols;
+            const row = Math.floor(i / map.cols);
+            const p = tileToWorld(col, row, map);
+            if (kind === "difficult") {
+              const j = hash2(col + 3, row + 11);
+              return (
+                <mesh
+                  key={i}
+                  position={[p.x + (j - 0.5) * 0.28, 0.2, p.z + (hash2(col, row + 5) - 0.5) * 0.28]}
+                  rotation={[0.08 * (j - 0.5), j * 6.2, 0.06 * (j - 0.4)]}
+                  scale={[0.72 + j * 0.55, 0.42 + j * 0.2, 0.55 + (1 - j) * 0.5]}
+                  castShadow
+                  receiveShadow
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                  }}
+                >
+                  <boxGeometry args={[TILE * 0.9, 0.55, TILE * 0.9]} />
+                  <meshStandardMaterial map={crateTex} color="#9a8b78" roughness={0.92} metalness={0.08} />
+                </mesh>
+              );
+            }
+            const tall = kind === "structure";
+            return (
+              <mesh
+                key={i}
+                position={[p.x, tall ? 1.15 : 0.55, p.z]}
+                castShadow
+                receiveShadow
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                }}
+              >
+                <boxGeometry args={[TILE * 0.92, tall ? 2.3 : 1.1, TILE * 0.92]} />
+                <meshStandardMaterial
+                  map={tall ? bulkheadTex : crateTex}
+                  color="#d8d4cc"
+                  roughness={0.72}
+                  metalness={0.22}
+                />
+              </mesh>
+            );
+          })}
     </group>
   );
 }

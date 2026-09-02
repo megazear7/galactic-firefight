@@ -21,12 +21,13 @@ import type {
   MapSize,
   Participant,
   TerrainBias,
+  TerrainTheme,
   PlayMode,
   PointScale,
   UnitState,
 } from "./types";
 import { ACTIVATIONS_PER_TURN, SAVE_VERSION } from "./types";
-import { UNIT_STATS, factionUnits, leaderType } from "./units";
+import { UNIT_STATS, factionUnits, hasFleet, leaderType } from "./units";
 import { emptyMask, revealExplored } from "./vision";
 
 let seq = 1;
@@ -250,6 +251,7 @@ export function createBattle(opts: {
   mapSize?: MapSize;
   terrainDensity?: TerrainBias;
   terrainSize?: TerrainBias;
+  terrainTheme?: TerrainTheme;
   participants?: Participant[];
   localPlayerId?: string;
   teamOrder?: number[];
@@ -296,6 +298,7 @@ export function createBattle(opts: {
   const map = generateMap(opts.seed, opts.mapSize ?? "medium", {
     density: opts.terrainDensity,
     size: opts.terrainSize,
+    theme: opts.terrainTheme,
   });
   const taken = new Set<string>();
   const units: UnitState[] = [];
@@ -548,7 +551,7 @@ export function chooseDestination(state: BattleState, col: number, row: number):
   const stats = UNIT_STATS[unit.type];
   const blockers = unitBlockers(state.units, unit.id);
   const radius = unitRadius(unit.type);
-  const path = findPath(state.map, unit, { col, row }, blockers, radius, stats.move);
+  const path = findPath(state.map, unit, { col, row }, blockers, radius, stats.move, hasFleet(unit.type));
   if (!path || path.length < 1) {
     return {
       ...state,
@@ -598,13 +601,14 @@ export function stepMove(state: BattleState, dt: number): BattleState {
   const unit = unitById(state, pending?.unitId ?? null);
   if (!pending || !unit || state.phase !== "moving") return state;
   const stats = UNIT_STATS[unit.type];
-  const cost = Math.max(0.28, pathCost(pending.path));
+  const cost = Math.max(0.28, pathCost(pending.path, state.map, hasFleet(unit.type)));
   const speed = 3.1 * stats.speed;
   let progress = state.moveProgress + (dt * speed) / cost;
   if (progress >= 1) progress = 1;
 
-  const prev = pointAlong(pending.path, state.moveProgress);
-  const now = pointAlong(pending.path, progress);
+  const fleet = hasFleet(unit.type);
+  const prev = pointAlong(pending.path, state.moveProgress, state.map, fleet);
+  const now = pointAlong(pending.path, progress, state.map, fleet);
 
   let units = state.units.map((u) => (u.id === unit.id ? { ...u, col: now.col, row: now.row } : u));
   const lines = [...state.log];
@@ -942,6 +946,7 @@ export function applyAiIntent(state: BattleState): BattleState {
     blockers,
     unitRadius(unit.type),
     UNIT_STATS[unit.type].move,
+    hasFleet(unit.type),
   );
   if (!path) {
     const units = state.units.map((u) =>
@@ -978,6 +983,7 @@ export function previewPath(state: BattleState, unit: UnitState, col: number, ro
     unitBlockers(state.units, unit.id),
     unitRadius(unit.type),
     UNIT_STATS[unit.type].move,
+    hasFleet(unit.type),
   );
 }
 
@@ -988,6 +994,7 @@ export function reachablePoints(state: BattleState, unit: UnitState) {
     UNIT_STATS[unit.type].move,
     unitBlockers(state.units, unit.id),
     unitRadius(unit.type),
+    hasFleet(unit.type),
   );
 }
 

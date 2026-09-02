@@ -125,7 +125,8 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
     faction: "brood",
     name: "Broodling",
     role: "Swarm",
-    description: "Fast, fragile, and armed only with scythe limbs. They close distance and tear.",
+    description:
+      "Fast, fragile, and armed only with scythe limbs. They close distance and tear. Fleet: they ignore difficult terrain.",
     cost: 8,
     hp: 5,
     move: 7,
@@ -167,6 +168,10 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
     maxTargets: 1,
   },
 };
+
+export function hasFleet(type: UnitType) {
+  return type === "broodling";
+}
 
 export function sightRange(type: UnitType) {
   const range = UNIT_STATS[type].range;
@@ -279,6 +284,7 @@ export function isFaction(value: string): value is Faction {
 
 export function unitSpecials(stats: UnitStats): string[] {
   const out: string[] = [];
+  if (hasFleet(stats.type)) out.push("Fleet — normal speed through difficult terrain");
   if (stats.range <= 0) out.push("Melee only");
   if (stats.arc >= 359) out.push("360° firing arc");
   if (stats.stealth) out.push(`Stealth — revealed within ${stats.stealthRevealRange} or after firing`);

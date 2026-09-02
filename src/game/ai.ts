@@ -1,7 +1,7 @@
 import { dist } from "./map";
 import { findPath, reachable } from "./pathfinding";
 import { meleeEnemies, rangedTargets, shotVictims, unitBlockers, unitRadius } from "./combat";
-import { UNIT_STATS } from "./units";
+import { UNIT_STATS, hasFleet } from "./units";
 import { ACTIVATIONS_PER_TURN } from "./types";
 import type { BattleState, UnitState } from "./types";
 
@@ -63,7 +63,7 @@ export function pickAiAction(state: BattleState): AiIntent | null {
       const blockers = unitBlockers(state.units, unit.id);
       const stats = UNIT_STATS[unit.type];
       const radius = unitRadius(unit.type);
-      const reach = reachable(state.map, unit, stats.move, blockers, radius);
+      const reach = reachable(state.map, unit, stats.move, blockers, radius, hasFleet(unit.type));
       let best: { col: number; row: number; score: number } | null = null;
       const stride = Math.max(1, Math.floor(reach.length / 48));
       for (let i = 0; i < reach.length; i += stride) {
@@ -74,7 +74,7 @@ export function pickAiAction(state: BattleState): AiIntent | null {
         if (!best || score > best.score) best = { col: tile.col, row: tile.row, score };
       }
       if (!best) return { kind: "wait", unitId: unit.id };
-      const path = findPath(state.map, unit, best, blockers, radius, stats.move);
+      const path = findPath(state.map, unit, best, blockers, radius, stats.move, hasFleet(unit.type));
       if (!path || path.length < 2) {
         const facing = Math.atan2(enemy.row - unit.row, enemy.col - unit.col);
         return { kind: "move", unitId: unit.id, col: unit.col, row: unit.row, facing };

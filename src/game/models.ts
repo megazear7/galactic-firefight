@@ -125,6 +125,10 @@ export function hasClip(type: UnitType, faction: Faction, pose: UnitPose) {
   return (unitModelSet(type, faction)?.clips[pose]?.length ?? 0) > 0;
 }
 
+export function hasDeathClip(type: UnitType, faction: Faction) {
+  return hasClip(type, faction, "dead");
+}
+
 function hashSeed(seed: string) {
   let h = 0;
   for (let i = 0; i < seed.length; i++) h = Math.imul(h, 31) + seed.charCodeAt(i);

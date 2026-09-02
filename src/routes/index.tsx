@@ -34,7 +34,11 @@ function Home() {
   }, [settings]);
 
   useEffect(() => {
-    if (!battle) return;
+    useGame.getState().setDataClient(identity.client);
+  }, [identity.client]);
+
+  useEffect(() => {
+    if (!battle && screen !== "lobby") return;
     const id = window.setInterval(() => persist(identity.client), 8000);
     const flush = () => persist(identity.client);
     document.addEventListener("visibilitychange", flush);
@@ -42,7 +46,7 @@ function Home() {
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", flush);
     };
-  }, [battle, identity.client, persist]);
+  }, [battle, screen, identity.client, persist]);
 
   return (
     <div className="relative min-h-dvh bg-bg text-fg">

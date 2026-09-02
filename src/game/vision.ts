@@ -1,7 +1,7 @@
-import { clamp, dist, idx, inBounds, isBlocked } from "./map";
+import { blocksLos, clamp, dist, idx, inBounds } from "./map";
 import { hasTerrainLos } from "./combat";
 import { sightRange } from "./units";
-import type { BattleMap, BattleState, UnitState } from "./types";
+import type { BattleMap, BattleState, TerrainBlob, UnitState } from "./types";
 import { devicePlayers } from "./lobby";
 
 export { sightRange };
@@ -42,7 +42,7 @@ function hitsOtherTerrain(
   for (let tc = c0; tc <= c1; tc++) {
     for (let tr = r0; tr <= r1; tr++) {
       if (tc === exceptCol && tr === exceptRow) continue;
-      if (!isBlocked(map, tc, tr)) continue;
+      if (!blocksLos(map, tc, tr)) continue;
       const nx = clamp(col, tc - 0.5, tc + 0.5);
       const ny = clamp(row, tr - 0.5, tr + 0.5);
       const dx = col - nx;
@@ -85,7 +85,7 @@ function canSeeTerrainFace(
 
 function canSeeTile(unit: UnitState, map: BattleMap, col: number, row: number) {
   const cap = sightRange(unit.type);
-  if (!isBlocked(map, col, row)) {
+  if (!blocksLos(map, col, row)) {
     if (dist(unit, { col, row }) > cap + 0.55) return false;
     return hasTerrainLos(map, unit, { col, row });
   }
@@ -97,12 +97,12 @@ function revealTerrainVolume(vis: boolean[], map: BattleMap) {
   for (let row = 0; row < map.rows; row++) {
     for (let col = 0; col < map.cols; col++) {
       const i = idx(col, row, map.cols);
-      if (!vis[i] || isBlocked(map, col, row)) continue;
+      if (!vis[i] || blocksLos(map, col, row)) continue;
       for (const [dc, dr] of TERRAIN_DIRS) {
         if (dc !== 0 && dr !== 0) continue;
         const nc = col + dc;
         const nr = row + dr;
-        if (!inBounds(nc, nr, map) || !isBlocked(map, nc, nr)) continue;
+        if (!inBounds(nc, nr, map) || !blocksLos(map, nc, nr)) continue;
         out[idx(nc, nr, map.cols)] = true;
       }
     }
@@ -111,14 +111,48 @@ function revealTerrainVolume(vis: boolean[], map: BattleMap) {
   for (let row = 0; row < map.rows; row++) {
     for (let col = 0; col < map.cols; col++) {
       const i = idx(col, row, map.cols);
-      if (!seeded[i] || !isBlocked(map, col, row)) continue;
+      if (!seeded[i] || !blocksLos(map, col, row)) continue;
       for (const [dc, dr] of TERRAIN_DIRS) {
         const nc = col + dc;
         const nr = row + dr;
-        if (!inBounds(nc, nr, map) || !isBlocked(map, nc, nr)) continue;
+        if (!inBounds(nc, nr, map) || !blocksLos(map, nc, nr)) continue;
         out[idx(nc, nr, map.cols)] = true;
       }
     }
+  }
+  return out;
+}
+
+function forEachDiskTile(map: BattleMap, blob: TerrainBlob, pad: number, fn: (i: number, col: number, row: number) => void) {
+  const reach = blob.radius + pad;
+  const r2 = reach * reach;
+  const c0 = Math.max(0, Math.floor(blob.col - reach));
+  const c1 = Math.min(map.cols - 1, Math.ceil(blob.col + reach));
+  const r0 = Math.max(0, Math.floor(blob.row - reach));
+  const r1 = Math.min(map.rows - 1, Math.ceil(blob.row + reach));
+  for (let row = r0; row <= r1; row++) {
+    for (let col = c0; col <= c1; col++) {
+      const dx = col - blob.col;
+      const dy = row - blob.row;
+      if (dx * dx + dy * dy > r2) continue;
+      fn(idx(col, row, map.cols), col, row);
+    }
+  }
+}
+
+/** Once you see any part of a hive mass, the whole disc is spotted. */
+function revealInfestationBlobs(vis: boolean[], map: BattleMap) {
+  if (map.theme !== "infestation" || !map.blobs.length) return vis;
+  const out = vis.slice();
+  for (const blob of map.blobs) {
+    let seen = false;
+    forEachDiskTile(map, blob, 1.05, (i) => {
+      if (vis[i]) seen = true;
+    });
+    if (!seen) continue;
+    forEachDiskTile(map, blob, 0.55, (i) => {
+      out[i] = true;
+    });
   }
   return out;
 }
@@ -148,7 +182,7 @@ export function visionMask(state: BattleState, team: number): boolean[] {
       }
     }
   }
-  return revealTerrainVolume(vis, map);
+  return revealInfestationBlobs(revealTerrainVolume(vis, map), map);
 }
 
 export function tileExplored(state: BattleState, col: number, row: number) {

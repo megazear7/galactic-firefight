@@ -5,7 +5,7 @@ import { UNIT_STATS, SPRITE_SRC } from "@/game/units";
 import type { UnitState } from "@/game/types";
 import { colorHex } from "@/game/lobby";
 import { UnitModel } from "./UnitModel";
-import { hasUnitModel, unitModelSet, unitPose, type UnitPose } from "@/game/models";
+import { hasDeathClip, hasUnitModel, unitModelSet, unitPose, type UnitPose } from "@/game/models";
 import { tileToWorld } from "@/game/map";
 import type { BattleMap, BattleState, GraphicsMode } from "@/game/types";
 
@@ -108,6 +108,7 @@ export function UnitVisual({
   });
 
   if (hidden) return null;
+  if (!unit.alive && !(modeled && hasDeathClip(unit.type, unit.faction))) return null;
   const opacity = dim ? 0.78 : unit.hp / unit.maxHp < 0.35 ? 0.9 : 1;
   const playerColor = colorHex(unit.color ?? 0);
   const sprite = (

@@ -1,4 +1,4 @@
-import { circleHitsTerrain, dist } from "./map";
+import { circleHitsLos, circleHitsTerrain, dist, tileIndex } from "./map";
 import { UNIT_STATS } from "./units";
 import { hitsBlocker, type Blocker } from "./pathfinding";
 import type { BattleMap, PathPoint, UnitState, UnitType } from "./types";
@@ -65,7 +65,14 @@ export function hasLos(
     const t = s / steps;
     const col = a.col + (b.col - a.col) * t;
     const row = a.row + (b.row - a.row) * t;
-    if (circleHitsTerrain(map, col, row, 0.07)) return false;
+    if (
+      circleHitsLos(map, col, row, 0.07, [
+        { col: tileIndex(a.col), row: tileIndex(a.row) },
+        { col: tileIndex(b.col), row: tileIndex(b.row) },
+      ])
+    ) {
+      return false;
+    }
     if (!blockUnits) continue;
     const fromA = t * len;
     const fromB = (1 - t) * len;
@@ -107,7 +114,7 @@ export function sightHorizon(
       const t = (s / steps) * maxRange;
       const col = unit.col + dx * t;
       const row = unit.row + dy * t;
-      if (circleHitsTerrain(map, col, row, 0.07)) break;
+      if (circleHitsLos(map, col, row, 0.07, [{ col: tileIndex(unit.col), row: tileIndex(unit.row) }])) break;
       last = { col, row };
     }
     pts.push(last);

@@ -12,7 +12,7 @@ import { CombatFx } from "./CombatFx";
 import { FogOfWar } from "./FogOfWar";
 import { readyUnits, canControl } from "@/game/battle";
 import { enemyVisible, localTeam, tileExplored, visionMask } from "@/game/vision";
-import { hasUnitModel } from "@/game/models";
+import { hasDeathClip, hasUnitModel } from "@/game/models";
 import type { MapControls as MapControlsImpl } from "three-stdlib";
 
 function Loop() {
@@ -312,7 +312,7 @@ function Scene() {
       )}
       {battle.units.map((u) => {
         const modeled = settings.graphics !== "sprites" && hasUnitModel(u.type, u.faction);
-        if (!u.alive && !modeled) return null;
+        if (!u.alive && !(modeled && hasDeathClip(u.type, u.faction))) return null;
         const hidden = u.alive ? !enemyVisible(battle, u, vis) : !tileExplored(battle, u.col, u.row);
         return (
           <group

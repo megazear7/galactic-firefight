@@ -1,4 +1,4 @@
-import { circleHitsTerrain, dist } from "./map";
+import { circleHitsTerrain, dist, moveMultiplier } from "./map";
 import type { BattleMap, PathPoint } from "./types";
 
 export type Blocker = { col: number; row: number; radius: number };
@@ -184,22 +184,38 @@ export function stringPull(
   return out;
 }
 
-export function pathCost(path: PathPoint[]) {
+export function pathCost(path: PathPoint[], map?: BattleMap, fleet = false) {
   let c = 0;
-  for (let i = 1; i < path.length; i++) c += dist(path[i - 1], path[i]);
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1];
+    const b = path[i];
+    const len = dist(a, b);
+    if (!map || len < 1e-6) {
+      c += len;
+      continue;
+    }
+    const steps = Math.max(1, Math.ceil(len * 8));
+    const ds = len / steps;
+    for (let s = 1; s <= steps; s++) {
+      const t = s / steps;
+      const col = a.col + (b.col - a.col) * t;
+      const row = a.row + (b.row - a.row) * t;
+      c += ds * moveMultiplier(map, col, row, fleet);
+    }
+  }
   return c;
 }
 
-export function pointAlong(path: PathPoint[], t: number): PathPoint {
+export function pointAlong(path: PathPoint[], t: number, map?: BattleMap, fleet = false): PathPoint {
   if (path.length === 0) return { col: 0, row: 0 };
   if (path.length === 1 || t <= 0) return path[0];
   if (t >= 1) return path[path.length - 1];
-  const total = Math.max(1e-6, pathCost(path));
+  const total = Math.max(1e-6, pathCost(path, map, fleet));
   let d = t * total;
   for (let i = 1; i < path.length; i++) {
     const a = path[i - 1];
     const b = path[i];
-    const seg = dist(a, b);
+    const seg = pathCost([a, b], map, fleet);
     if (d <= seg || i === path.length - 1) {
       const u = seg < 1e-6 ? 1 : d / seg;
       return { col: a.col + (b.col - a.col) * u, row: a.row + (b.row - a.row) * u };
@@ -209,15 +225,15 @@ export function pointAlong(path: PathPoint[], t: number): PathPoint {
   return path[path.length - 1];
 }
 
-export function truncatePath(path: PathPoint[], maxCost: number): PathPoint[] {
+export function truncatePath(path: PathPoint[], maxCost: number, map?: BattleMap, fleet = false): PathPoint[] {
   if (path.length <= 1) return path;
-  if (pathCost(path) <= maxCost + 1e-6) return path;
+  if (pathCost(path, map, fleet) <= maxCost + 1e-6) return path;
   const out = [path[0]];
   let used = 0;
   for (let i = 1; i < path.length; i++) {
     const a = path[i - 1];
     const b = path[i];
-    const seg = dist(a, b);
+    const seg = pathCost([a, b], map, fleet);
     if (used + seg >= maxCost) {
       const u = seg < 1e-6 ? 1 : (maxCost - used) / seg;
       out.push({ col: a.col + (b.col - a.col) * u, row: a.row + (b.row - a.row) * u });
@@ -243,6 +259,7 @@ function searchReachable(
   blockers: Blocker[],
   radius: number,
   maxCost: number,
+  fleet = false,
 ): Search {
   const { nx, ny } = navSize(map);
   const key = (i: number, j: number) => j * nx + i;
@@ -268,7 +285,8 @@ function searchReachable(
         // Both orthogonals must be free — no squeezing through wall corners.
         if (!a || !b) continue;
       }
-      const g = cur.g + step * cellStep;
+      const nxt = cellCenter(ni, nj);
+      const g = cur.g + step * cellStep * moveMultiplier(map, nxt.col, nxt.row, fleet);
       if (g > maxCost + 0.08) continue;
       const idx = key(ni, nj);
       if (g + 1e-6 >= bestG[idx]) continue;
@@ -310,6 +328,7 @@ export function findPath(
   blockers: Blocker[],
   radius: number,
   maxCost = 99,
+  fleet = false,
 ): PathPoint[] | null {
   const snapped = snapWalkable(map, goal, blockers, radius);
   const target = snapped ?? goal;
@@ -318,7 +337,7 @@ export function findPath(
     return [start, dest];
   }
 
-  const search = searchReachable(map, start, blockers, radius, maxCost);
+  const search = searchReachable(map, start, blockers, radius, maxCost, fleet);
   const { nx, ny, bestG } = search;
   const gc = toCell(target.col, target.row, nx, ny);
   const goalIdx = gc.j * nx + gc.i;
@@ -345,20 +364,20 @@ export function findPath(
 
   let cells = reconstruct(search, end, start);
   const last = cells[cells.length - 1];
-  if (snapped && dist(last, snapped) > 0.02 && pathCost(cells) + dist(last, snapped) <= maxCost + 0.12) {
+  if (snapped && dist(last, snapped) > 0.02 && pathCost(cells, map, fleet) + pathCost([last, snapped], map, fleet) <= maxCost + 0.12) {
     if (clearSegment(map, last, snapped, blockers, radius)) cells.push(snapped);
   }
   const exactOk = !blockedAt(map, goal.col, goal.row, blockers, radius);
   if (exactOk) {
     const tail = cells[cells.length - 1];
-    if (dist(tail, goal) > 0.02 && pathCost(cells) + dist(tail, goal) <= maxCost + 0.12) {
+    if (dist(tail, goal) > 0.02 && pathCost(cells, map, fleet) + pathCost([tail, goal], map, fleet) <= maxCost + 0.12) {
       if (clearSegment(map, tail, goal, blockers, radius)) cells.push(goal);
     }
   }
 
   cells = stringPull(cells, map, blockers, radius);
-  cells = truncatePath(cells, maxCost + 0.08);
-  if (pathCost(cells) > maxCost + 0.16) return null;
+  cells = truncatePath(cells, maxCost + 0.08, map, fleet);
+  if (pathCost(cells, map, fleet) > maxCost + 0.16) return null;
   return cells;
 }
 
@@ -368,8 +387,9 @@ export function reachable(
   move: number,
   blockers: Blocker[],
   radius: number,
+  fleet = false,
 ): Array<{ col: number; row: number; cost: number }> {
-  const search = searchReachable(map, start, blockers, radius, move);
+  const search = searchReachable(map, start, blockers, radius, move, fleet);
   const { nx, bestG } = search;
   const out: Array<{ col: number; row: number; cost: number }> = [
     { col: start.col, row: start.row, cost: 0 },

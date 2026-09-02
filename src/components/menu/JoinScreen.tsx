@@ -82,6 +82,8 @@ export function JoinScreen() {
         mapSize: next.mapSize,
         terrainDensity: next.terrainDensity ?? 2,
         terrainSize: next.terrainSize ?? 2,
+        terrainTheme:
+          next.terrainTheme === "infestation" || next.terrainTheme === "wartorn" ? next.terrainTheme : "spaceship",
         visibility: next.visibility,
         gameName: next.name,
       });
