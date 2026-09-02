@@ -570,6 +570,44 @@ describe("hotseat", () => {
     assert.equal(state.playerId, "p-two");
     assert.equal(state.turnTeam, 2);
   });
+
+  it("lets an authenticated joined human control their active team", () => {
+    const state = createBattle({
+      seed: 12,
+      mapSize: "small",
+      participants: [
+        {
+          id: "p-host",
+          kind: "human",
+          name: "Host",
+          faction: "empire",
+          team: 1,
+          color: 0,
+          army: { captain: 1, soldier: 1 },
+          ready: true,
+          host: true,
+        },
+        {
+          id: "p-guest",
+          kind: "human",
+          name: "Guest",
+          faction: "brood",
+          team: 2,
+          color: 1,
+          army: { tyrant: 1, broodling: 2 },
+          ready: true,
+          host: false,
+        },
+      ],
+      localPlayerId: "p-guest",
+      teamOrder: [2, 1],
+      mode: "multi",
+    });
+    assert.equal(state.playerId, "p-guest");
+    assert.equal(state.turnTeam, 2);
+    assert.equal(state.phase, "select");
+    assert.equal(canControl(state), true);
+  });
 });
 
 function visOf(map: BattleMap, u: UnitState, extras: UnitState[] = []) {

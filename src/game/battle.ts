@@ -10,7 +10,7 @@ import {
   unitRadius,
 } from "./combat";
 import { dist, generateMap, teamDeployTiles, tileToWorld } from "./map";
-import { devicePlayers, isDevicePlayer, playable, shuffleTeams } from "./lobby";
+import { devicePlayers, isDevicePlayer, isSeatedHuman, playable, shuffleTeams } from "./lobby";
 import { findPath, pathCost, pointAlong, reachable } from "./pathfinding";
 import type {
   ActMode,
@@ -213,7 +213,11 @@ function placeArmy(
 }
 
 export function localParticipant(state: BattleState) {
-  return state.participants.find((p) => p.id === state.playerId) ?? state.participants.find((p) => p.host) ?? null;
+  return (
+    state.participants.find((p) => p.id === state.playerId) ??
+    state.participants.find((p) => p.host) ??
+    null
+  );
 }
 
 export function hotseatActive(state: BattleState) {
@@ -294,7 +298,8 @@ export function createBattle(opts: {
           ? [2, 1].filter((t) => teams.includes(t)).concat(teams.filter((t) => t !== 1 && t !== 2))
           : [1, 2].filter((t) => teams.includes(t)).concat(teams.filter((t) => t !== 1 && t !== 2))
         : shuffleTeams(teams, opts.seed);
-  const localPlayerId = opts.localPlayerId ?? participants.find((p) => p.kind === "human")?.id ?? participants[0].id;
+  const localPlayerId =
+    opts.localPlayerId ?? participants.find((p) => p.kind === "human")?.id ?? participants[0].id;
   const local = participants.find((p) => p.id === localPlayerId) ?? participants[0];
   const map = generateMap(opts.seed, opts.mapSize ?? "medium", {
     density: opts.terrainDensity,
@@ -350,7 +355,8 @@ export function createBattle(opts: {
     winner: null,
     playerFaction: local.faction,
     enemyFaction,
-    mode: opts.mode ?? (participants.some((p) => p.kind === "human" && !p.host) ? "multi" : "single"),
+    mode:
+      opts.mode ?? (participants.some((p) => p.kind === "human" && !p.host) ? "multi" : "single"),
     fx: [],
     explored: emptyMask(map),
     actMode: "move",
@@ -392,7 +398,8 @@ export function activationsCap(state: BattleState, team = state.turnTeam) {
 }
 
 export function turnExhausted(state: BattleState) {
-  if (state.units.some((u) => u.alive && u.team === state.turnTeam && u.moved && !u.acted)) return false;
+  if (state.units.some((u) => u.alive && u.team === state.turnTeam && u.moved && !u.acted))
+    return false;
   if (activationsDone(state) >= activationsCap(state)) return true;
   return !state.units.some((u) => u.alive && u.team === state.turnTeam && !u.acted);
 }
@@ -408,7 +415,10 @@ export function checkWinner(state: BattleState): BattleState {
       : local && winner === local.team
         ? "The field is yours."
         : "Your line has broken.";
-  const tone = winner === "draw" ? "danger" : state.units.find((u) => u.team === winner)?.faction ?? "neutral";
+  const tone =
+    winner === "draw"
+      ? "danger"
+      : (state.units.find((u) => u.team === winner)?.faction ?? "neutral");
   return {
     ...state,
     winner,
@@ -430,7 +440,11 @@ function resumeSide(state: BattleState): BattleState {
   if (!teamIsLocal(state)) {
     return { ...state, phase: "enemyTurn", selectedId: null, pendingMove: null, pendingShot: null };
   }
-  return { ...state, phase: state.phase === "act" ? "act" : "select", selectedId: state.selectedId };
+  return {
+    ...state,
+    phase: state.phase === "act" ? "act" : "select",
+    selectedId: state.selectedId,
+  };
 }
 
 function enterFireAfterMove(state: BattleState): BattleState {
@@ -464,7 +478,7 @@ export function canControl(state: BattleState) {
   }
   if (state.phase === "gameOver") return false;
   const me = localParticipant(state);
-  return Boolean(me && isDevicePlayer(me) && me.team === state.turnTeam);
+  return Boolean(me && isSeatedHuman(me) && me.team === state.turnTeam);
 }
 
 export function whyImmobile(state: BattleState, unit: UnitState): string | null {
@@ -499,7 +513,10 @@ export function selectUnit(state: BattleState, id: string): BattleState {
   ) {
     return { ...state, selectedId: id };
   }
-  if (unit.team !== state.turnTeam || (localParticipant(state)?.id && unit.playerId !== localParticipant(state)?.id)) {
+  if (
+    unit.team !== state.turnTeam ||
+    (localParticipant(state)?.id && unit.playerId !== localParticipant(state)?.id)
+  ) {
     return { ...state, selectedId: id, phase: "select", pendingMove: null, actMode: "move" };
   }
   if (unit.moved && !unit.acted) {
@@ -541,7 +558,10 @@ export function setActMode(state: BattleState, mode: ActMode): BattleState {
     log:
       targets.length || melee.length
         ? state.log
-        : [log("No eligible targets. Toggle back to move, or wait.", "neutral"), ...state.log].slice(0, 40),
+        : [
+            log("No eligible targets. Toggle back to move, or wait.", "neutral"),
+            ...state.log,
+          ].slice(0, 40),
   };
 }
 
@@ -551,7 +571,15 @@ export function chooseDestination(state: BattleState, col: number, row: number):
   const stats = UNIT_STATS[unit.type];
   const blockers = unitBlockers(state.units, unit.id);
   const radius = unitRadius(unit.type);
-  const path = findPath(state.map, unit, { col, row }, blockers, radius, stats.move, hasFleet(unit.type));
+  const path = findPath(
+    state.map,
+    unit,
+    { col, row },
+    blockers,
+    radius,
+    stats.move,
+    hasFleet(unit.type),
+  );
   if (!path || path.length < 1) {
     return {
       ...state,
@@ -565,7 +593,11 @@ export function chooseDestination(state: BattleState, col: number, row: number):
       log: [log("That ground is blocked.", "neutral"), ...state.log].slice(0, 40),
     };
   }
-  const facing = hoverFacing(unit, dest.col + Math.cos(unit.facing), dest.row + Math.sin(unit.facing));
+  const facing = hoverFacing(
+    unit,
+    dest.col + Math.cos(unit.facing),
+    dest.row + Math.sin(unit.facing),
+  );
   return {
     ...state,
     phase: "aimFacing",
@@ -636,7 +668,10 @@ export function stepMove(state: BattleState, dt: number): BattleState {
           watcher.faction,
         ),
       );
-      fx = [...spawnShotFx(state.map, watcher, [{ ...mover, col: pos.col, row: pos.row }], "overwatch"), ...fx];
+      fx = [
+        ...spawnShotFx(state.map, watcher, [{ ...mover, col: pos.col, row: pos.row }], "overwatch"),
+        ...fx,
+      ];
       overwatchDone = true;
       const after = units.find((u) => u.id === unit.id)!;
       if (!after.alive) {
@@ -719,7 +754,10 @@ export function beginShoot(state: BattleState): BattleState {
     return {
       ...state,
       actMode: "fire",
-      log: [log("Engaged at the start of the turn — firearms are silent. Strike or wait.", "neutral"), ...state.log].slice(0, 40),
+      log: [
+        log("Engaged at the start of the turn — firearms are silent. Strike or wait.", "neutral"),
+        ...state.log,
+      ].slice(0, 40),
     };
   }
   const targets = rangedTargets(unit, state.units, state.map);
@@ -727,7 +765,10 @@ export function beginShoot(state: BattleState): BattleState {
     return {
       ...state,
       actMode: "fire",
-      log: [log("No eligible targets in range, arc, and sight.", "neutral"), ...state.log].slice(0, 40),
+      log: [log("No eligible targets in range, arc, and sight.", "neutral"), ...state.log].slice(
+        0,
+        40,
+      ),
     };
   }
   return { ...state, phase: "aimShoot", actMode: "fire" };
@@ -739,12 +780,14 @@ export function confirmShoot(state: BattleState, targetId: string): BattleState 
   if (!unit || !target || !unit.alive || !target.alive) return state;
   if (unit.team !== state.turnTeam || unit.team === target.team) return state;
   if (unit.acted) return state;
-  if (state.phase === "gameOver" || state.phase === "moving" || state.phase === "resolving") return state;
+  if (state.phase === "gameOver" || state.phase === "moving" || state.phase === "resolving")
+    return state;
   if (state.phase === "enemyTurn") {
     const owner = state.participants.find((p) => p.id === unit.playerId);
     if (owner?.kind !== "ai") return state;
   } else if (!canControl(state)) return state;
-  if (!rangedTargets(unit, state.units, state.map).some((candidate) => candidate.id === target.id)) return state;
+  if (!rangedTargets(unit, state.units, state.map).some((candidate) => candidate.id === target.id))
+    return state;
   const ids = shotVictims(unit, target, state.units, state.map);
   const victims = ids.map((id) => unitById(state, id)).filter((u): u is UnitState => !!u);
   return {
@@ -822,9 +865,7 @@ export function resolveShot(state: BattleState): BattleState {
 export function waitUnit(state: BattleState): BattleState {
   const unit = unitById(state, state.selectedId);
   if (!unit) return state;
-  const units = state.units.map((u) =>
-    u.id === unit.id ? { ...u, moved: true, acted: true } : u,
-  );
+  const units = state.units.map((u) => (u.id === unit.id ? { ...u, moved: true, acted: true } : u));
   const next = { ...state, units, phase: "select" as const, selectedId: null, pendingMove: null };
   return resumeSide(next);
 }
@@ -848,7 +889,12 @@ export function beginHotseat(state: BattleState): BattleState {
 export function endTurn(state: BattleState): BattleState {
   if (state.hotseatPending) return state;
   const me = localParticipant(state);
-  if (me && isDevicePlayer(me) && me.team === state.turnTeam && activationsDone(state) < activationsCap(state)) {
+  if (
+    me &&
+    isDevicePlayer(me) &&
+    me.team === state.turnTeam &&
+    activationsDone(state) < activationsCap(state)
+  ) {
     const nextLocal = nextDeviceOnTeam(state, me.id);
     if (nextLocal && hotseatActive(state)) {
       return {
