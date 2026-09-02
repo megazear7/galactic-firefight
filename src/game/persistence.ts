@@ -247,7 +247,7 @@ export async function putHostLobby(client: UserDataClient, lobby: MpLobby) {
   });
   await client.put({
     app: MEGAZEAR_APP,
-    visibility: "shared",
+    visibility: "public",
     path: `games/${lobby.id}/state`,
     data: lobby,
   });
@@ -278,6 +278,7 @@ export async function putSharedGame(
   data: GameRecord,
 ) {
   const key = `${hostId ?? ""}/${gameId}`;
+  const visibility = data.visibility === "public" ? "public" : "shared";
   const previous = sharedWrites.get(key) ?? Promise.resolve();
   const write = previous.then(async () => {
     let next = data;
@@ -285,7 +286,7 @@ export async function putSharedGame(
       const current = await client.get<GameRecord>({
         targetUserId: hostId,
         app: MEGAZEAR_APP,
-        visibility: "shared",
+        visibility,
         path: `games/${gameId}/state`,
       });
       const latest = migrateGame(current.data);
@@ -309,7 +310,7 @@ export async function putSharedGame(
     await client.put({
       targetUserId: hostId,
       app: MEGAZEAR_APP,
-      visibility: "shared",
+      visibility,
       path: `games/${gameId}/state`,
       data: next,
     });
@@ -328,22 +329,26 @@ export async function getSharedGame(
   hostId: string,
   gameId: string,
 ): Promise<GameRecord | null> {
-  try {
-    const rec = await client.get<GameRecord>({
-      targetUserId: hostId,
-      app: MEGAZEAR_APP,
-      visibility: "shared",
-      path: `games/${gameId}/state`,
-    });
-    return migrateGame(rec.data);
-  } catch {
-    return null;
+  for (const visibility of ["public", "shared"] as const) {
+    try {
+      const rec = await client.get<GameRecord>({
+        targetUserId: hostId,
+        app: MEGAZEAR_APP,
+        visibility,
+        path: `games/${gameId}/state`,
+      });
+      return migrateGame(rec.data);
+    } catch (error) {
+      if (!(error instanceof UserDataError) || error.status !== 404) return null;
+    }
   }
+  return null;
 }
 
 export type AclDoc = {
   version: 1;
   updatedAt: string;
+  publicWrite?: boolean;
   entries: Array<{
     id: string;
     principal: { type: "user" | "email"; id: string };
@@ -389,7 +394,12 @@ export async function grantGuestAcl(
       createdBy: ownerId,
     });
   }
-  await client.putAcl(MEGAZEAR_APP, { version: 1, updatedAt: ts, entries });
+  await client.putAcl(MEGAZEAR_APP, {
+    version: 1,
+    updatedAt: ts,
+    publicWrite: existing.publicWrite,
+    entries,
+  });
 }
 
 function readLocalPublic(): PublicListing[] {

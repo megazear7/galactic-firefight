@@ -59,6 +59,7 @@ import { DEFAULT_SETTINGS } from "./types";
 import { defaultLoadout } from "./units";
 import { randomGameName } from "./game-names";
 import type { UserDataClient } from "@/lib/identity/megazear-users";
+import { MEGAZEAR_APP } from "@/lib/identity/config";
 import {
   canAddSlot,
   claimInviteSlot,
@@ -128,7 +129,7 @@ type Store = {
     user?: { id?: string; name?: string; email?: string } | null,
     client?: UserDataClient | null,
   ) => Promise<void>;
-  addSlot: (kind: SlotKind, email?: string) => void;
+  addSlot: (kind: SlotKind, email?: string) => Promise<void>;
   removeSlot: (id: string) => void;
   patchParticipant: (id: string, patch: Partial<Participant>) => void;
   toggleReady: (id: string) => void;
@@ -367,6 +368,9 @@ export const useGame = create<Store>((set, get) => ({
     try {
       await saveGame(dataClient, rec, { throwOnError: true });
       if (dataClient && rec.mode === "multi" && rec.hostId) {
+        if (rec.visibility === "public") {
+          await dataClient.setPublicWriteAccess(MEGAZEAR_APP, true, rec.hostId);
+        }
         await putSharedGame(dataClient, rec.hostId, rec.id, rec);
       }
       const listingError = await upsertPublicLobby(dataClient, rec, user?.id);
@@ -378,7 +382,7 @@ export const useGame = create<Store>((set, get) => ({
       });
     }
   },
-  addSlot: (kind, email) => {
+  addSlot: async (kind, email) => {
     const { participants, mapSize, points, visibility } = get();
     if (!canAddSlot(participants, mapSize)) return;
     if (kind === "open" && visibility !== "public") return;
@@ -411,7 +415,7 @@ export const useGame = create<Store>((set, get) => ({
       publishSharedLobby(get().dataClient, rec);
       const dataClient = get().dataClient;
       if (kind === "invite" && email && rec.hostId && dataClient) {
-        void grantGuestAcl(dataClient, rec.hostId, rec.id, { email: email.trim() });
+        await grantGuestAcl(dataClient, rec.hostId, rec.id, { email: email.trim() });
       }
       void upsertPublicLobby(get().dataClient, rec, rec.hostId).then((err) => {
         if (err) set({ statusMessage: err });

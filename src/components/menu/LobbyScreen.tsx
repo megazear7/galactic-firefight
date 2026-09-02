@@ -326,7 +326,7 @@ export function LobbyScreen() {
   async function addInvite() {
     const email = inviteDraft.trim();
     if (!email) return;
-    addSlot("invite", email);
+    await addSlot("invite", email);
     setInviteDraft("");
     setInviteOpen(false);
     await copyInviteLink();

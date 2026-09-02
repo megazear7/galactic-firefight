@@ -120,6 +120,21 @@ export class UserDataClient {
     });
   }
 
+  async setPublicWriteAccess(app: string, enabled: boolean, targetUserId?: string) {
+    let acl: { version: 1; updatedAt: string; entries: unknown[] } = {
+      version: 1,
+      updatedAt: new Date().toISOString(),
+      entries: [],
+    };
+    try {
+      const current = await this.getAcl(app, targetUserId);
+      acl = current.data as typeof acl;
+    } catch {
+      // The first public write creates the ACL document.
+    }
+    return this.putAcl(app, { ...acl, publicWrite: enabled }, targetUserId);
+  }
+
   private async request(
     method: string,
     locator: DataLocator,
