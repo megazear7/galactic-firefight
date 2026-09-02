@@ -13,6 +13,8 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+const sharedWrites = new Map<string, Promise<void>>();
+
 export function newGameId() {
   const rand = Math.random().toString(36).slice(2, 8);
   return `skirmish-${Date.now().toString(36)}-${rand}`;
@@ -275,13 +277,50 @@ export async function putSharedGame(
   gameId: string,
   data: GameRecord,
 ) {
-  await client.put({
-    targetUserId: hostId,
-    app: MEGAZEAR_APP,
-    visibility: "shared",
-    path: `games/${gameId}/state`,
-    data,
+  const key = `${hostId ?? ""}/${gameId}`;
+  const previous = sharedWrites.get(key) ?? Promise.resolve();
+  const write = previous.then(async () => {
+    let next = data;
+    try {
+      const current = await client.get<GameRecord>({
+        targetUserId: hostId,
+        app: MEGAZEAR_APP,
+        visibility: "shared",
+        path: `games/${gameId}/state`,
+      });
+      const latest = migrateGame(current.data);
+      const hostParticipant = latest.participants.find((participant) => participant.host);
+      const callerIsHost = data.playerId === hostParticipant?.id;
+      const participants = callerIsHost
+        ? data.participants
+        : latest.participants.map((participant) =>
+            participant.id === data.playerId
+              ? (data.participants.find((candidate) => candidate.id === data.playerId) ?? participant)
+              : participant,
+          );
+      next = {
+        ...latest,
+        ...data,
+        participants,
+      };
+    } catch {
+      // The first write creates the shared document.
+    }
+    await client.put({
+      targetUserId: hostId,
+      app: MEGAZEAR_APP,
+      visibility: "shared",
+      path: `games/${gameId}/state`,
+      data: next,
+    });
   });
+  const queued = write.catch(() => undefined);
+  sharedWrites.set(key, queued);
+  try {
+    await write;
+  } finally {
+    if (sharedWrites.get(key) === queued) sharedWrites.delete(key);
+  }
 }
 
 export async function getSharedGame(

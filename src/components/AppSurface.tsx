@@ -51,7 +51,7 @@ export function AppSurface() {
   }, [screen, identity.client, userId]);
 
   useEffect(() => {
-    if (!battle && screen !== "lobby") return;
+    if (!battle) return;
     const id = window.setInterval(() => persist(identity.client, identity.user?.id), 8000);
     const flush = () => persist(identity.client, identity.user?.id);
     document.addEventListener("visibilitychange", flush);

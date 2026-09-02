@@ -23,7 +23,7 @@ export function BrowseScreen() {
 
   useEffect(() => {
     reload();
-    const id = window.setInterval(reload, 8000);
+    const id = window.setInterval(reload, 30_000);
     return () => window.clearInterval(id);
   }, [identity.client]);
 
