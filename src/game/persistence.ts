@@ -167,7 +167,11 @@ export async function getGame(client: UserDataClient | null, id: string): Promis
   }
 }
 
-export async function saveGame(client: UserDataClient | null, game: GameRecord): Promise<GameRecord> {
+export async function saveGame(
+  client: UserDataClient | null,
+  game: GameRecord,
+  options: { throwOnError?: boolean } = {},
+): Promise<GameRecord> {
   const next: GameRecord = { ...migrateGame(game), updatedAt: nowIso() };
   const local = readLocal().filter((g) => g.id !== next.id);
   local.unshift(next);
@@ -188,6 +192,7 @@ export async function saveGame(client: UserDataClient | null, game: GameRecord):
       });
     } catch (err) {
       console.warn("identity save failed; kept local copy", err);
+      if (options.throwOnError) throw err;
     }
   }
   return next;

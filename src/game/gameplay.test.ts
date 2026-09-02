@@ -4,7 +4,9 @@ import {
   hasLos,
   hasTerrainLos,
   inArc,
+  meleeEnemies,
   pickOverwatch,
+  rangedTargets,
   sightHorizon,
 } from "./combat.ts";
 import { createBattle, confirmShoot, selectUnit, deselectUnit, setActMode, chooseDestination, confirmMove, stepMove, turnExhausted, waitUnit, activationsDone, activationsCap, beginHotseat, endTurn, canControl } from "./battle.ts";
@@ -481,6 +483,37 @@ describe("fire/move toggle", () => {
     const next = confirmShoot(state, victim.id);
     assert.equal(next.phase, "enemyTurn");
     assert.equal(next.pendingShot, null);
+  });
+});
+
+describe("shooting restrictions", () => {
+  it("uses the expanded engagement distance without expanding melee reach", () => {
+    const shooter = unit({ id: "shooter", col: 0, row: 0 });
+    const enemy = unit({ id: "enemy", col: 1.9, row: 0, faction: "brood", team: 2 });
+    const units = [shooter, enemy];
+    assert.equal(meleeEnemies(shooter, units).length, 0);
+    assert.equal(rangedTargets(shooter, units, floorMap()).length, 0);
+  });
+
+  it("keeps a unit from shooting for the turn after it starts engaged", () => {
+    const shooter = unit({ id: "shooter", col: 0, row: 0, engagedAtTurnStart: true, moved: true });
+    const enemy = unit({ id: "enemy", col: 4, row: 0, faction: "brood", team: 2 });
+    assert.equal(rangedTargets(shooter, [shooter, enemy], floorMap()).length, 0);
+  });
+
+  it("does not shoot an enemy engaged with a friendly unit", () => {
+    const shooter = unit({ id: "shooter", col: 4, row: 0 });
+    const friendly = unit({ id: "friendly", col: 0, row: 1.9 });
+    const enemy = unit({ id: "enemy", col: 0, row: 0, faction: "brood", team: 2 });
+    assert.equal(rangedTargets(shooter, [shooter, friendly, enemy], floorMap()).length, 0);
+  });
+
+  it("halves range after moving except for the captain's Assault pistol", () => {
+    const enemy = unit({ id: "enemy", col: 4, row: 0, faction: "brood", team: 2 });
+    const soldier = unit({ id: "soldier", col: 0, row: 0, moved: true });
+    const captain = unit({ id: "captain", type: "captain", col: 0, row: 0, moved: true });
+    assert.equal(rangedTargets(soldier, [soldier, enemy], floorMap()).length, 0);
+    assert.equal(rangedTargets(captain, [captain, enemy], floorMap()).length, 1);
   });
 });
 

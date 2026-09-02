@@ -126,7 +126,7 @@ type Store = {
   confirmCreate: (
     user?: { id?: string; name?: string; email?: string } | null,
     client?: UserDataClient | null,
-  ) => void;
+  ) => Promise<void>;
   addSlot: (kind: SlotKind, email?: string) => void;
   removeSlot: (id: string) => void;
   patchParticipant: (id: string, patch: Partial<Participant>) => void;
@@ -307,7 +307,7 @@ export const useGame = create<Store>((set, get) => ({
     sfx.ui();
     set({ visibility });
   },
-  confirmCreate: (user, client) => {
+  confirmCreate: async (user, client) => {
     if (client !== undefined) set({ dataClient: client });
     const dataClient = get().dataClient;
     const {
@@ -363,11 +363,19 @@ export const useGame = create<Store>((set, get) => ({
       faction: participants[0].faction,
       army: participants[0].army,
     });
-    void saveGame(dataClient, rec);
-    publishSharedLobby(dataClient, rec);
-    void upsertPublicLobby(dataClient, rec, user?.id).then((err) => {
-      if (err) set({ statusMessage: err });
-    });
+    try {
+      await saveGame(dataClient, rec, { throwOnError: true });
+      if (dataClient && rec.mode === "multi" && rec.hostId) {
+        await putSharedGame(dataClient, rec.hostId, rec.id, rec);
+      }
+      const listingError = await upsertPublicLobby(dataClient, rec, user?.id);
+      if (listingError) set({ statusMessage: listingError });
+    } catch (err) {
+      console.warn("game creation failed", err);
+      set({
+        statusMessage: err instanceof Error ? `Could not create game: ${err.message}` : "Could not create game.",
+      });
+    }
   },
   addSlot: (kind, email) => {
     const { participants, mapSize, points, visibility } = get();

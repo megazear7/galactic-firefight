@@ -5,6 +5,7 @@ import {
   pickOverwatch,
   rangedTargets,
   shotVictims,
+  shootingEngagementEnemies,
   unitBlockers,
   unitRadius,
 } from "./combat";
@@ -237,7 +238,7 @@ export function foes(a: { team: number }, b: { team: number }) {
 function markEngaged(units: UnitState[]): UnitState[] {
   return units.map((u) => ({
     ...u,
-    engagedAtTurnStart: u.alive && meleeEnemies(u, units).length > 0,
+    engagedAtTurnStart: u.alive && shootingEngagementEnemies(u, units).length > 0,
   }));
 }
 
@@ -345,7 +346,7 @@ export function createBattle(opts: {
     pendingMove: null,
     pendingShot: null,
     moveProgress: 0,
-    log: [log(`Team ${firstTeam} has the opening volley.`, firstFaction)],
+    log: [log(`Team ${firstTeam} has the opening turn.`, firstFaction)],
     winner: null,
     playerFaction: local.faction,
     enemyFaction,
@@ -743,6 +744,7 @@ export function confirmShoot(state: BattleState, targetId: string): BattleState 
     const owner = state.participants.find((p) => p.id === unit.playerId);
     if (owner?.kind !== "ai") return state;
   } else if (!canControl(state)) return state;
+  if (!rangedTargets(unit, state.units, state.map).some((candidate) => candidate.id === target.id)) return state;
   const ids = shotVictims(unit, target, state.units, state.map);
   const victims = ids.map((id) => unitById(state, id)).filter((u): u is UnitState => !!u);
   return {

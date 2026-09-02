@@ -1,5 +1,5 @@
-import { Copy, Minus, Plus, Trash2, X } from "lucide-react";
-import { useState } from "react";
+import { Copy, Minus, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -284,6 +284,9 @@ export function LobbyScreen() {
   const identity = useIdentity();
   const navigate = useNavigate();
   const statusMessage = useGame((s) => s.statusMessage);
+  const syncMulti = useGame((s) => s.syncMulti);
+  const refreshTimer = useRef<number | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const localId = record?.playerId ?? participants.find((p) => p.host)?.id ?? "";
   const host = participants.find((p) => p.host)?.id === localId;
   const cap = slotCap(mapSize);
@@ -293,6 +296,21 @@ export function LobbyScreen() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteDraft, setInviteDraft] = useState("");
   const [copyNotice, setCopyNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (refreshTimer.current !== null) window.clearTimeout(refreshTimer.current);
+    };
+  }, []);
+
+  function refresh() {
+    if (!identity.client || !identity.user?.id) return;
+    if (refreshTimer.current !== null) window.clearTimeout(refreshTimer.current);
+    setRefreshing(true);
+    refreshTimer.current = window.setTimeout(() => {
+      void syncMulti(identity.client!, identity.user!.id).finally(() => setRefreshing(false));
+    }, 1000);
+  }
 
   async function copyInviteLink() {
     if (!record?.id || !hostId) return;
@@ -317,8 +335,22 @@ export function LobbyScreen() {
   return (
     <div className="mx-auto flex min-h-dvh max-w-5xl flex-col gap-6 px-5 py-8">
       <div>
-        <p className="text-xs uppercase tracking-[0.28em] text-muted">Roster</p>
-        <h1 className="mt-1 font-display text-4xl font-semibold">{record?.name ?? "Firefight"}</h1>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.28em] text-muted">Roster</p>
+            <h1 className="mt-1 font-display text-4xl font-semibold">{record?.name ?? "Firefight"}</h1>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={refresh}
+            disabled={!identity.client || !identity.user?.id || refreshing}
+            aria-label="Refresh roster"
+            title="Refresh roster"
+          >
+            <RefreshCw className={refreshing ? "size-4 animate-spin" : "size-4"} />
+          </Button>
+        </div>
         {visibility === "public" && !identity.isAuthenticated && (
           <p className="mt-2 text-sm text-subtle">
             Sign in to list this table for other commanders.

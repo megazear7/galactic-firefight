@@ -37,10 +37,17 @@ export function AppSurface() {
 
   useEffect(() => {
     if (screen !== "lobby" || !identity.client || !userId) return;
-    const sync = () => void useGame.getState().syncMulti(identity.client!, userId!);
+    const sync = () => {
+      if (document.visibilityState !== "visible") return;
+      void useGame.getState().syncMulti(identity.client!, userId!);
+    };
     sync();
-    const id = window.setInterval(sync, 2000);
-    return () => window.clearInterval(id);
+    const id = window.setInterval(sync, 30_000);
+    document.addEventListener("visibilitychange", sync);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", sync);
+    };
   }, [screen, identity.client, userId]);
 
   useEffect(() => {

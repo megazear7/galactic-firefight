@@ -168,13 +168,40 @@ export function meleeEnemies(unit: UnitState, units: UnitState[]) {
   );
 }
 
+export function shootingEngagementEnemies(unit: UnitState, units: UnitState[]) {
+  const stats = UNIT_STATS[unit.type];
+  return units.filter(
+    (o) =>
+      o.alive &&
+      o.team !== unit.team &&
+      dist(unit, o) <= stats.meleeRange * 1.25 + unitRadius(o.type) + 0.05,
+  );
+}
+
+function effectiveRangedRange(unit: UnitState) {
+  const stats = UNIT_STATS[unit.type];
+  return unit.moved && !stats.assault ? stats.range / 2 : stats.range;
+}
+
+function inMeleeWithFriendly(target: UnitState, unit: UnitState, units: UnitState[]) {
+  return units.some(
+    (friendly) =>
+      friendly.alive &&
+      friendly.team === unit.team &&
+      friendly.id !== target.id &&
+      shootingEngagementEnemies(friendly, units).some((enemy) => enemy.id === target.id),
+  );
+}
+
 export function rangedTargets(unit: UnitState, units: UnitState[], map: BattleMap) {
   const stats = UNIT_STATS[unit.type];
   if (stats.range <= 0) return [];
   if (unit.engagedAtTurnStart) return [];
+  const range = effectiveRangedRange(unit);
   return units.filter((o) => {
     if (!o.alive || o.team === unit.team) return false;
-    if (dist(unit, o) > stats.range + 0.05) return false;
+    if (dist(unit, o) > range + 0.05) return false;
+    if (inMeleeWithFriendly(o, unit, units)) return false;
     if (!inArc(unit, o)) return false;
     if (!visibleTo(unit, o, map, units)) return false;
     return true;
@@ -187,6 +214,7 @@ export function shotVictims(attacker: UnitState, primary: UnitState, units: Unit
   if (stats.aoeRadius > 0) {
     for (const u of units) {
       if (!u.alive || u.team === attacker.team) continue;
+      if (inMeleeWithFriendly(u, attacker, units)) continue;
       if (dist(primary, u) <= stats.aoeRadius + 0.05) ids.add(u.id);
     }
   }
@@ -194,8 +222,9 @@ export function shotVictims(attacker: UnitState, primary: UnitState, units: Unit
     const extras = units
       .filter((u) => {
         if (!u.alive || u.team === attacker.team || u.id === primary.id) return false;
+        if (inMeleeWithFriendly(u, attacker, units)) return false;
         if (dist(primary, u) > stats.multiTargetRadius + 0.05) return false;
-        if (dist(attacker, u) > stats.range + 0.05) return false;
+          if (dist(attacker, u) > effectiveRangedRange(attacker) + 0.05) return false;
         if (!inArc(attacker, u)) return false;
         if (!visibleTo(attacker, u, map, units)) return false;
         return true;

@@ -65,9 +65,11 @@ function UnitActions({
       )}
       {(battle.phase === "act" || battle.phase === "aimShoot" || battle.actMode === "fire") && (
         <>
-          <Button className={compactBtn} onClick={shoot} disabled={opts.ranged.length === 0}>
-            <Target className="size-4 sm:size-3.5" /> Fire
-          </Button>
+          <span title="You are too close to enemey units to shoot">
+            <Button className={compactBtn} onClick={shoot} disabled={opts.ranged.length === 0}>
+              <Target className="size-4 sm:size-3.5" /> Fire
+            </Button>
+          </span>
           {opts.melee[0] ? (
             <Button variant="secondary" className={compactBtn} onClick={() => melee(opts.melee[0].id)}>
               <Swords className="size-4 sm:size-3.5" /> Melee

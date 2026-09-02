@@ -87,6 +87,7 @@ export type UnitStats = {
   hp: number;
   move: number;
   speed: number;
+  assault: boolean;
   range: number;
   damage: number;
   overwatchDamage: number;
