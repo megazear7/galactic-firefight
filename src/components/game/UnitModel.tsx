@@ -10,6 +10,7 @@ import {
   unitModelSet,
   type UnitPose,
 } from "@/game/models";
+import { disposeClone, rememberGltfScene, releaseTinted, retainTints } from "@/game/gltf-memory";
 
 const ACTION_MATCH: Record<UnitPose, RegExp[]> = {
   idle: [/^idle/i, /idle/i, /stance/i],
@@ -30,16 +31,6 @@ function meshTint(type: UnitType, faction: Faction) {
   if (faction === "brood") return 0.68;
   if (type === "sniper" || type === "machine_gunner") return 1.34;
   return 1.18;
-}
-
-function tintMaterial(material: THREE.Material | THREE.Material[], tint: number) {
-  const one = (mat: THREE.Material) => {
-    const copy = mat.clone();
-    const colored = copy as THREE.MeshStandardMaterial;
-    if (colored.color) colored.color.multiplyScalar(tint);
-    return copy;
-  };
-  return Array.isArray(material) ? material.map(one) : one(material);
 }
 
 function pickAction(actions: Record<string, THREE.AnimationAction | null>, pose: UnitPose) {
@@ -72,18 +63,31 @@ function SkinnedClip({
 }) {
   const root = useRef<THREE.Group>(null);
   const { scene, animations } = useGLTF(url);
+  const assigned = useRef<Array<THREE.Material | THREE.Material[]>>([]);
   const cloned = useMemo(() => {
+    rememberGltfScene(url, scene);
+    const used: Array<THREE.Material | THREE.Material[]> = [];
     const copy = clone(scene);
     copy.traverse((obj) => {
       const mesh = obj as THREE.Mesh;
       if (!mesh.isMesh) return;
       mesh.castShadow = true;
-      mesh.receiveShadow = true;
+      mesh.receiveShadow = false;
       if ((mesh as THREE.SkinnedMesh).isSkinnedMesh) mesh.frustumCulled = false;
-      mesh.material = tintMaterial(mesh.material, tint);
+      const next = retainTints(mesh.material, tint);
+      used.push(next);
+      mesh.material = next;
     });
+    assigned.current = used;
     return copy;
-  }, [scene, tint]);
+  }, [scene, tint, url]);
+  useEffect(() => {
+    const mats = assigned.current;
+    return () => {
+      for (const mat of mats) releaseTinted(mat);
+      disposeClone(cloned);
+    };
+  }, [cloned]);
   const { actions } = useAnimations(animations, root);
 
   useEffect(() => {
@@ -121,14 +125,13 @@ export function UnitModel({
   type,
   faction,
   pose,
-  seed,
   facing,
   onFinished,
 }: {
   type: UnitType;
   faction: Faction;
   pose: UnitPose;
-  seed: string;
+  seed?: string;
   facing: number;
   onFinished?: () => void;
 }) {
@@ -138,18 +141,13 @@ export function UnitModel({
   useEffect(() => {
     if (pose !== "idle") setIdleBreak(false);
   }, [pose]);
-  useEffect(() => {
-    if (!set) return;
-    for (const list of Object.values(set.clips)) {
-      for (const src of list) useGLTF.preload(src);
-    }
-  }, [set]);
   const onIdleLoop = useCallback(() => {
     if (Math.random() < IDLE_SPECIAL_CHANCE) setIdleBreak(true);
   }, []);
   const onSpecialDone = useCallback(() => setIdleBreak(false), []);
   const playing: UnitPose = pose === "idle" && idleBreak ? "idle_special" : pose;
-  const url = pickModelUrl(type, faction, playing, seed);
+  const clipSeed = `${type}:${faction}`;
+  const url = pickModelUrl(type, faction, playing, clipSeed);
   if (!set || !url) return null;
   const loop = playing === "idle" || playing === "move";
   return (

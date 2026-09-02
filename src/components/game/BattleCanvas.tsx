@@ -231,7 +231,13 @@ function Scene() {
         position={[18, 28, 14]}
         intensity={1.12}
         castShadow
-        shadow-mapSize={[1024, 1024]}
+        shadow-mapSize={[512, 512]}
+        shadow-camera-near={4}
+        shadow-camera-far={64}
+        shadow-camera-left={-22}
+        shadow-camera-right={22}
+        shadow-camera-top={22}
+        shadow-camera-bottom={-22}
       />
       <directionalLight position={[-14, 12, -10]} intensity={0.32} />
       <Ground
@@ -357,14 +363,24 @@ function Scene() {
 
 export function BattleCanvas() {
   const [ready, setReady] = useState(false);
-  useEffect(() => setReady(true), []);
+  useEffect(() => {
+    setReady(true);
+    return () => {
+      void import("@/game/gltf-memory").then((m) => m.releaseBattleGltfs());
+    };
+  }, []);
   if (!ready) return <div className="size-full bg-bg" />;
   return (
     <Canvas
       className="size-full touch-none"
       shadows="percentage"
-      dpr={[1, 2]}
-      gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}
+      dpr={[1, 1.25]}
+      gl={{
+        antialias: true,
+        stencil: false,
+        powerPreference: "high-performance",
+        toneMapping: THREE.ACESFilmicToneMapping,
+      }}
       camera={{ position: [14, 18, 16], fov: 38, near: 0.1, far: 180 }}
       onCreated={({ camera }) => {
         camera.lookAt(0, 0, 0);

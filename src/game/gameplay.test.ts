@@ -13,8 +13,8 @@ import { MAP_SLOT_CAP } from "./types.ts";
 import { findPath, pathCost, blockedAt } from "./pathfinding.ts";
 import { circleHitsTerrain, dist, generateMap, idx, isBlocked, MAP_DIMS } from "./map.ts";
 import { enemyVisible, visionMask } from "./vision.ts";
-import { hasClip, hasDeathClip, hasUnitModel, pickModelUrl, unitModelSet, unitPose } from "./models.ts";
-import { allGameAssetUrls } from "./preload.ts";
+import { hasClip, hasDeathClip, hasUnitModel, pickModelUrl, rosterModelUrls, unitModelSet, unitPose } from "./models.ts";
+import { allGameAssetUrls, bootAssetUrls } from "./preload.ts";
 import type { BattleMap, BattleState, UnitState } from "./types.ts";
 
 function floorMap(cols = 8, rows = 8): BattleMap {
@@ -832,6 +832,24 @@ describe("unit models", () => {
 
   it("preloads audio, models, and sprites before a match", () => {
     const urls = allGameAssetUrls();
+    const boot = bootAssetUrls();
+    assert.equal(
+      boot.some((u) => u.endsWith(".glb")),
+      false,
+      "boot preload must not parse the 1GB GLB catalog",
+    );
+    const roster = rosterModelUrls([
+      { type: "soldier", faction: "empire" },
+      { type: "soldier", faction: "empire" },
+      { type: "tyrant", faction: "brood" },
+    ]);
+    assert.equal(roster.length, 2);
+    assert.ok(roster.some((u) => u.includes("empire-soldier-idle-")));
+    assert.ok(roster.some((u) => u.includes("swarm-tyrant-idle-")));
+    assert.equal(
+      roster.some((u) => u.includes("melee") || u.includes("move") || u.includes("dead")),
+      false,
+    );
     assert.ok(urls.some((u) => u.endsWith("ambience.mp3")));
     assert.ok(urls.some((u) => u.includes("empire-soldier-idle-01.glb")));
     assert.ok(urls.some((u) => u.endsWith("/assets/units/soldier.png")));

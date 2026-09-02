@@ -179,3 +179,17 @@ export function allModelUrls(type?: UnitType, faction?: Faction): string[] {
   }
   return out;
 }
+
+/** One idle clip per type on the field. Variants share a clip so GPU memory stays shared. */
+export function rosterModelUrls(units: Array<{ type: UnitType; faction: Faction }>): string[] {
+  const urls = new Set<string>();
+  const seen = new Set<string>();
+  for (const u of units) {
+    const key = `${u.type}:${u.faction}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const idle = pickModelUrl(u.type, u.faction, "idle", key);
+    if (idle) urls.add(idle);
+  }
+  return [...urls];
+}

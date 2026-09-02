@@ -1,7 +1,8 @@
 import { SPRITE_SRC } from "./units";
-import { allAudioUrls, warmAudioBank } from "./audio";
-import { allModelUrls } from "./models";
+import { allAudioUrls, coreAudioUrls, warmAudioBank } from "./audio";
+import { allModelUrls, rosterModelUrls } from "./models";
 import { APP_VERSION } from "@/app-version";
+import type { Faction, UnitType } from "./types";
 
 const ASSET_CACHE = `gf-${import.meta.env?.VITE_APP_VERSION ?? APP_VERSION}`;
 
@@ -25,12 +26,13 @@ export function allGameAssetUrls() {
   return [...new Set([...IMAGE_URLS, ...allAudioUrls(), ...allModelUrls()])];
 }
 
-function isImage(url: string) {
-  return /\.(png|jpe?g|webp|gif)$/i.test(url);
+/** Images and small UI audio. GLBs stay on disk (SW) and parse only for the live roster. */
+export function bootAssetUrls() {
+  return [...new Set([...IMAGE_URLS, ...coreAudioUrls()])];
 }
 
-function isGltf(url: string) {
-  return /\.(glb|gltf)$/i.test(url);
+function isImage(url: string) {
+  return /\.(png|jpe?g|webp|gif)$/i.test(url);
 }
 
 async function decodeImage(url: string) {
@@ -67,7 +69,8 @@ async function mapPool<T>(items: T[], limit: number, fn: (item: T) => Promise<vo
   await Promise.all(workers);
 }
 
-async function warmGltf(urls: string[]) {
+export async function ensureBattleModels(units: Array<{ type: UnitType; faction: Faction }>) {
+  const urls = rosterModelUrls(units);
   if (!urls.length) return;
   const { useGLTF } = await import("@react-three/drei");
   for (const url of urls) useGLTF.preload(url);
@@ -104,7 +107,7 @@ export function ensureGameAssets() {
   if (ready) return Promise.resolve();
   if (inflight) return inflight;
   inflight = (async () => {
-    const urls = allGameAssetUrls();
+    const urls = bootAssetUrls();
     const total = Math.max(1, urls.length);
     let done = 0;
     await mapPool(urls, POOL, async (url) => {
@@ -113,7 +116,7 @@ export function ensureGameAssets() {
       progress = done / total;
       emit();
     });
-    await Promise.all([warmAudioBank(), warmGltf(urls.filter(isGltf))]);
+    await warmAudioBank();
     progress = 1;
     ready = true;
     emit();

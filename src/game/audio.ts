@@ -264,10 +264,13 @@ function playFile(name: SfxName, fallback: () => void) {
   clip.once("load", () => clip.play());
 }
 
+export function coreAudioUrls() {
+  return [...Object.values(FILES).map((f) => f.src), AMBIENCE_SRC];
+}
+
 export function allAudioUrls() {
   return [
-    ...Object.values(FILES).map((f) => f.src),
-    AMBIENCE_SRC,
+    ...coreAudioUrls(),
     ...COMMAND_FILES.map((name) => `/assets/sfx/${name}.mp3`),
     ...ATTACK_FILES.map((name) => `/assets/sfx/${name}.mp3`),
   ];
@@ -284,9 +287,7 @@ function waitHowl(clip: Howl) {
 export async function warmAudioBank() {
   (Object.keys(FILES) as SfxName[]).forEach(getHowl);
   getAmbience();
-  for (const name of COMMAND_FILES) getClipHowl(`/assets/sfx/${name}.mp3`, COMMAND_GAIN);
-  for (const name of ATTACK_FILES) getClipHowl(`/assets/sfx/${name}.mp3`, ATTACK_GAIN);
-  const clips: Howl[] = [...howls.values(), ...clipHowls.values()];
+  const clips: Howl[] = [...howls.values()];
   if (ambience) clips.push(ambience);
   await Promise.all(clips.map(waitHowl));
 }

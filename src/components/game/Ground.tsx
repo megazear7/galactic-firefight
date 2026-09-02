@@ -1,23 +1,30 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { TILE, idx, inBounds, mulberry32, tileToWorld, worldToPoint } from "@/game/map";
-import type { BattleMap, TerrainBlob } from "@/game/types";
+import type { BattleMap, TerrainBlob, TileKind } from "@/game/types";
 import type { ThreeEvent } from "@react-three/fiber";
 
 const loader = new THREE.TextureLoader();
 
 function useTileTexture(src: string, rx: number, ry: number) {
-  return useMemo(() => {
-    const t = loader.load(src);
-    t.colorSpace = THREE.SRGBColorSpace;
-    t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.anisotropy = 8;
-    t.repeat.set(rx, ry);
-    return t;
+  const t = useMemo(() => {
+    const tex = loader.load(src);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.anisotropy = 4;
+    tex.repeat.set(rx, ry);
+    return tex;
   }, [src, rx, ry]);
+  useEffect(() => () => t.dispose(), [t]);
+  return t;
 }
 
-const CELL = 48;
+const CELL = 32;
+const WALL_GEO = new THREE.BoxGeometry(TILE * 0.92, 1.1, TILE * 0.92);
+const STRUCT_GEO = new THREE.BoxGeometry(TILE * 0.92, 2.3, TILE * 0.92);
+const DEBRIS_GEO = new THREE.BoxGeometry(TILE * 0.9, 0.55, TILE * 0.9);
+const MOUND_GEO = new THREE.SphereGeometry(0.5, 12, 8);
+const dummy = new THREE.Object3D();
 const TEX = {
   plates: "/assets/ground/plates.jpg",
   grate: "/assets/ground/grate.jpg",
@@ -391,17 +398,17 @@ function InfestationMound({
   const jitter = hash2(Math.round(blob.col * 10), Math.round(blob.row * 10));
   return (
     <mesh
+      geometry={MOUND_GEO}
       position={[p.x, h * 0.42, p.z]}
       scale={[span * (0.88 + jitter * 0.28), h, span * (0.92 + (1 - jitter) * 0.22)]}
       rotation={[0, jitter * Math.PI * 2, 0]}
-      castShadow
+      castShadow={false}
       receiveShadow
       renderOrder={5}
       onPointerDown={(e) => {
         e.stopPropagation();
       }}
     >
-      <sphereGeometry args={[0.5, 16, 12]} />
       <meshStandardMaterial
         map={rust}
         color={tall ? "#e0b07a" : "#d4a06c"}
@@ -409,6 +416,136 @@ function InfestationMound({
         metalness={0.04}
       />
     </mesh>
+  );
+}
+
+function collectKind(map: BattleMap, explored: boolean[], kind: TileKind) {
+  const out: number[] = [];
+  for (let i = 0; i < map.tiles.length; i++) {
+    if (map.tiles[i] !== kind || !explored[i]) continue;
+    out.push(i);
+  }
+  return out;
+}
+
+function InstancedCover({
+  indexes,
+  map,
+  geometry,
+  mapTex,
+  color,
+  roughness,
+  metalness,
+  place,
+}: {
+  indexes: number[];
+  map: BattleMap;
+  geometry: THREE.BufferGeometry;
+  mapTex: THREE.Texture;
+  color: string;
+  roughness: number;
+  metalness: number;
+  place: (col: number, row: number, dummy: THREE.Object3D) => void;
+}) {
+  const ref = useRef<THREE.InstancedMesh>(null);
+  useLayoutEffect(() => {
+    const mesh = ref.current;
+    if (!mesh) return;
+    for (let i = 0; i < indexes.length; i++) {
+      const idx = indexes[i];
+      const col = idx % map.cols;
+      const row = Math.floor(idx / map.cols);
+      place(col, row, dummy);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingSphere();
+  }, [indexes, map.cols, place]);
+  if (!indexes.length) return null;
+  return (
+    <instancedMesh
+      key={indexes.length}
+      ref={ref}
+      args={[geometry, undefined, indexes.length]}
+      castShadow={false}
+      receiveShadow
+      onPointerDown={(e) => {
+        e.stopPropagation();
+      }}
+    >
+      <meshStandardMaterial map={mapTex} color={color} roughness={roughness} metalness={metalness} />
+    </instancedMesh>
+  );
+}
+
+function CoverInstances({
+  map,
+  explored,
+  crateTex,
+  bulkheadTex,
+}: {
+  map: BattleMap;
+  explored: boolean[];
+  crateTex: THREE.Texture;
+  bulkheadTex: THREE.Texture;
+}) {
+  const walls = useMemo(() => collectKind(map, explored, "wall"), [map, explored]);
+  const structures = useMemo(() => collectKind(map, explored, "structure"), [map, explored]);
+  const debris = useMemo(() => collectKind(map, explored, "difficult"), [map, explored]);
+  return (
+    <>
+      <InstancedCover
+        indexes={walls}
+        map={map}
+        geometry={WALL_GEO}
+        mapTex={crateTex}
+        color="#d8d4cc"
+        roughness={0.72}
+        metalness={0.22}
+        place={(col, row, obj) => {
+          const p = tileToWorld(col, row, map);
+          obj.position.set(p.x, 0.55, p.z);
+          obj.rotation.set(0, 0, 0);
+          obj.scale.set(1, 1, 1);
+        }}
+      />
+      <InstancedCover
+        indexes={structures}
+        map={map}
+        geometry={STRUCT_GEO}
+        mapTex={bulkheadTex}
+        color="#d8d4cc"
+        roughness={0.72}
+        metalness={0.22}
+        place={(col, row, obj) => {
+          const p = tileToWorld(col, row, map);
+          obj.position.set(p.x, 1.15, p.z);
+          obj.rotation.set(0, 0, 0);
+          obj.scale.set(1, 1, 1);
+        }}
+      />
+      <InstancedCover
+        indexes={debris}
+        map={map}
+        geometry={DEBRIS_GEO}
+        mapTex={crateTex}
+        color="#9a8b78"
+        roughness={0.92}
+        metalness={0.08}
+        place={(col, row, obj) => {
+          const p = tileToWorld(col, row, map);
+          const j = hash2(col + 3, row + 11);
+          obj.position.set(
+            p.x + (j - 0.5) * 0.28,
+            0.2,
+            p.z + (hash2(col, row + 5) - 0.5) * 0.28,
+          );
+          obj.rotation.set(0.08 * (j - 0.5), j * 6.2, 0.06 * (j - 0.4));
+          obj.scale.set(0.72 + j * 0.55, 0.42 + j * 0.2, 0.55 + (1 - j) * 0.5);
+        }}
+      />
+    </>
   );
 }
 
@@ -441,7 +578,7 @@ export function Ground({
         const canvas = paintGround(map, imgs);
         tex = new THREE.CanvasTexture(canvas);
         tex.colorSpace = THREE.SRGBColorSpace;
-        tex.anisotropy = 8;
+        tex.anisotropy = 4;
         tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
         tex.needsUpdate = true;
         setGround(tex);
@@ -507,52 +644,14 @@ export function Ground({
               rust={rustTex}
             />
           ))
-        : map.tiles.map((kind, i) => {
-            if (kind === "floor" || kind === "door") return null;
-            if (!explored[i]) return null;
-            const col = i % map.cols;
-            const row = Math.floor(i / map.cols);
-            const p = tileToWorld(col, row, map);
-            if (kind === "difficult") {
-              const j = hash2(col + 3, row + 11);
-              return (
-                <mesh
-                  key={i}
-                  position={[p.x + (j - 0.5) * 0.28, 0.2, p.z + (hash2(col, row + 5) - 0.5) * 0.28]}
-                  rotation={[0.08 * (j - 0.5), j * 6.2, 0.06 * (j - 0.4)]}
-                  scale={[0.72 + j * 0.55, 0.42 + j * 0.2, 0.55 + (1 - j) * 0.5]}
-                  castShadow
-                  receiveShadow
-                  onPointerDown={(e) => {
-                    e.stopPropagation();
-                  }}
-                >
-                  <boxGeometry args={[TILE * 0.9, 0.55, TILE * 0.9]} />
-                  <meshStandardMaterial map={crateTex} color="#9a8b78" roughness={0.92} metalness={0.08} />
-                </mesh>
-              );
-            }
-            const tall = kind === "structure";
-            return (
-              <mesh
-                key={i}
-                position={[p.x, tall ? 1.15 : 0.55, p.z]}
-                castShadow
-                receiveShadow
-                onPointerDown={(e) => {
-                  e.stopPropagation();
-                }}
-              >
-                <boxGeometry args={[TILE * 0.92, tall ? 2.3 : 1.1, TILE * 0.92]} />
-                <meshStandardMaterial
-                  map={tall ? bulkheadTex : crateTex}
-                  color="#d8d4cc"
-                  roughness={0.72}
-                  metalness={0.22}
-                />
-              </mesh>
-            );
-          })}
+        : (
+          <CoverInstances
+            map={map}
+            explored={explored}
+            crateTex={crateTex}
+            bulkheadTex={bulkheadTex}
+          />
+        )}
     </group>
   );
 }
