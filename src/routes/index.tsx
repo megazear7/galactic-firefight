@@ -39,14 +39,14 @@ function Home() {
 
   useEffect(() => {
     if (!battle && screen !== "lobby") return;
-    const id = window.setInterval(() => persist(identity.client), 8000);
-    const flush = () => persist(identity.client);
+    const id = window.setInterval(() => persist(identity.client, identity.user?.id), 8000);
+    const flush = () => persist(identity.client, identity.user?.id);
     document.addEventListener("visibilitychange", flush);
     return () => {
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", flush);
     };
-  }, [battle, screen, identity.client, persist]);
+  }, [battle, screen, identity.client, identity.user?.id, persist]);
 
   return (
     <div className="relative min-h-dvh bg-bg text-fg">

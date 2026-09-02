@@ -122,7 +122,10 @@ type Store = {
   setGameName: (v: string) => void;
   setPasscode: (v: string) => void;
   setVisibility: (v: GameVisibility) => void;
-  confirmCreate: (user?: { id?: string; name?: string; email?: string } | null) => void;
+  confirmCreate: (
+    user?: { id?: string; name?: string; email?: string } | null,
+    client?: UserDataClient | null,
+  ) => void;
   addSlot: (kind: SlotKind, email?: string) => void;
   removeSlot: (id: string) => void;
   patchParticipant: (id: string, patch: Partial<Participant>) => void;
@@ -133,6 +136,7 @@ type Store = {
     listing: PublicListing,
     passcode: string,
     user?: { id?: string; name?: string; email?: string } | null,
+    client?: UserDataClient | null,
   ) => Promise<string | null>;
   beginBattle: (opts?: { enemyArmy?: ArmyLoadout; first?: Faction }) => void;
   loadRecord: (g: GameRecord) => void;
@@ -150,7 +154,7 @@ type Store = {
   fireAt: (targetId: string) => void;
   end: () => void;
   tick: (dt: number) => void;
-  persist: (client: UserDataClient | null) => void;
+  persist: (client: UserDataClient | null, actorId?: string) => void;
   hydrateJoin: (hostId: string, gameId: string) => void;
   syncMulti: (client: UserDataClient, userId: string) => Promise<void>;
 };
@@ -260,7 +264,7 @@ export const useGame = create<Store>((set, get) => ({
     set({ terrainDensity, record: next });
     if (next) {
       void saveGame(get().dataClient, next);
-      void upsertPublicLobby(get().dataClient, next);
+      void upsertPublicLobby(get().dataClient, next, next.hostId);
     }
   },
   setTerrainSize: (terrainSize) => {
@@ -270,7 +274,7 @@ export const useGame = create<Store>((set, get) => ({
     set({ terrainSize, record: next });
     if (next) {
       void saveGame(get().dataClient, next);
-      void upsertPublicLobby(get().dataClient, next);
+      void upsertPublicLobby(get().dataClient, next, next.hostId);
     }
   },
   setTerrainTheme: (terrainTheme) => {
@@ -280,7 +284,7 @@ export const useGame = create<Store>((set, get) => ({
     set({ terrainTheme, record: next });
     if (next) {
       void saveGame(get().dataClient, next);
-      void upsertPublicLobby(get().dataClient, next);
+      void upsertPublicLobby(get().dataClient, next, next.hostId);
     }
   },
   setFaction: (faction) => {
@@ -295,7 +299,9 @@ export const useGame = create<Store>((set, get) => ({
     sfx.ui();
     set({ visibility });
   },
-  confirmCreate: (user) => {
+  confirmCreate: (user, client) => {
+    if (client !== undefined) set({ dataClient: client });
+    const dataClient = get().dataClient;
     const { points, mapSize, terrainDensity, terrainSize, terrainTheme, gameName, passcode, visibility, faction } = get();
     const participants = defaultMatch(points, {
       name: user?.name || user?.email || "You",
@@ -321,8 +327,10 @@ export const useGame = create<Store>((set, get) => ({
     });
     sfx.confirm();
     set({ record: rec, participants, screen: "lobby", faction: participants[0].faction, army: participants[0].army });
-    void saveGame(get().dataClient, rec);
-    void upsertPublicLobby(get().dataClient, rec);
+    void saveGame(dataClient, rec);
+    void upsertPublicLobby(dataClient, rec, user?.id).then((err) => {
+      if (err) set({ statusMessage: err });
+    });
   },
   addSlot: (kind, email) => {
     const { participants, mapSize, points, visibility } = get();
@@ -352,7 +360,10 @@ export const useGame = create<Store>((set, get) => ({
     set({ participants: next, record: rec });
     if (rec) {
       void saveGame(get().dataClient, rec);
-      void upsertPublicLobby(get().dataClient, rec);
+      void upsertPublicLobby(get().dataClient, rec, rec.hostId).then((err) => {
+        if (err) set({ statusMessage: err });
+        else set({ statusMessage: null });
+      });
     }
   },
   removeSlot: (id) => {
@@ -365,7 +376,7 @@ export const useGame = create<Store>((set, get) => ({
     set({ participants: next, record: rec });
     if (rec) {
       void saveGame(get().dataClient, rec);
-      void upsertPublicLobby(get().dataClient, rec);
+      void upsertPublicLobby(get().dataClient, rec, rec.hostId);
     }
   },
   patchParticipant: (id, patch) => {
@@ -383,7 +394,7 @@ export const useGame = create<Store>((set, get) => ({
     set({ participants: next, record: rec });
     if (rec) {
       void saveGame(get().dataClient, rec);
-      void upsertPublicLobby(get().dataClient, rec);
+      void upsertPublicLobby(get().dataClient, rec, rec.hostId);
     }
   },
   toggleReady: (id) => {
@@ -394,7 +405,7 @@ export const useGame = create<Store>((set, get) => ({
     set({ participants: next, record: rec });
     if (rec) {
       void saveGame(get().dataClient, rec);
-      void upsertPublicLobby(get().dataClient, rec);
+      void upsertPublicLobby(get().dataClient, rec, rec.hostId);
     }
   },
   startHotseat: () => {
@@ -442,7 +453,8 @@ export const useGame = create<Store>((set, get) => ({
     void saveGame(get().dataClient, rec);
     void removePublicLobby(get().dataClient, rec.id);
   },
-  joinListing: async (listing, code, user) => {
+  joinListing: async (listing, code, user, passedClient) => {
+    if (passedClient !== undefined) set({ dataClient: passedClient });
     const client = get().dataClient;
     const record = get().record;
     let game = record?.id === listing.id ? record : null;
@@ -493,7 +505,7 @@ export const useGame = create<Store>((set, get) => ({
       gameName: next.name,
     });
     void saveGame(client, next);
-    void upsertPublicLobby(client, next);
+    void upsertPublicLobby(client, next, user?.id);
     if (client && listing.hostId) {
       void putSharedGame(client, listing.hostId, listing.id, next);
     }
@@ -730,12 +742,12 @@ export const useGame = create<Store>((set, get) => ({
     }
     if (battle !== get().battle) set({ battle });
   },
-  persist: (client) => {
+  persist: (client, actorId) => {
     const { record, battle } = get();
     if (!record) return;
     if (!battle) {
       void saveGame(client, record);
-      void upsertPublicLobby(client, record);
+      void upsertPublicLobby(client, record, actorId);
       return;
     }
     const status: GameRecord["status"] =

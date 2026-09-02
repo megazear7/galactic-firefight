@@ -204,6 +204,7 @@ export function LobbyScreen() {
   const startMatch = useGame((s) => s.startMatch);
   const setScreen = useGame((s) => s.setScreen);
   const identity = useIdentity();
+  const statusMessage = useGame((s) => s.statusMessage);
   const [invite, setInvite] = useState("");
   const localId = record?.playerId ?? participants.find((p) => p.host)?.id ?? "";
   const host = participants.find((p) => p.host)?.id === localId;
@@ -216,6 +217,10 @@ export function LobbyScreen() {
       <div>
         <p className="text-xs uppercase tracking-[0.28em] text-muted">Roster</p>
         <h1 className="mt-1 font-display text-4xl font-semibold">{record?.name ?? "Firefight"}</h1>
+        {visibility === "public" && !identity.isAuthenticated && (
+          <p className="mt-2 text-sm text-subtle">Sign in to list this table for other commanders.</p>
+        )}
+        {statusMessage ? <p className="mt-2 text-sm text-danger">{statusMessage}</p> : null}
         <dl className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted">
           <div>{MAP_SIZE_LABEL[mapSize]} map</div>
           <div>{points} points</div>

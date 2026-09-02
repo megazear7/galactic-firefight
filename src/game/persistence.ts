@@ -1,5 +1,6 @@
 import type { BattleState, GameRecord, PublicListing, Settings, UnitState } from "./types";
 import { listingOf } from "./lobby";
+import { asListing, mergeListings } from "./listings";
 import { DEFAULT_SETTINGS, SAVE_VERSION } from "./types";
 import { MEGAZEAR_APP } from "@/lib/identity/config";
 import { UserDataClient, UserDataError } from "@/lib/identity/megazear-users";
@@ -366,17 +367,47 @@ function writeLocalPublic(games: PublicListing[]) {
   }
 }
 
-function collectListing(byId: Map<string, PublicListing>, g: PublicListing | null | undefined) {
-  if (!g?.id) return;
-  const prev = byId.get(g.id);
-  if (!prev || (g.updatedAt ?? "") >= (prev.updatedAt ?? "")) byId.set(g.id, g);
+const PUBLIC_DIRECTORY = "/api/public-lobbies";
+
+async function fetchPublicDirectory(client: UserDataClient | null): Promise<PublicListing[]> {
+  try {
+    const headers = client ? await client.headers() : {};
+    const res = await fetch(PUBLIC_DIRECTORY, { headers });
+    if (!res.ok) return [];
+    const body = (await res.json()) as { games?: unknown };
+    return Array.isArray(body.games) ? body.games.map(asListing).filter((g): g is PublicListing => Boolean(g)) : [];
+  } catch {
+    return [];
+  }
 }
 
-function asListing(data: unknown): PublicListing | null {
-  if (!data || typeof data !== "object") return null;
-  const g = data as Partial<PublicListing>;
-  if (typeof g.id !== "string") return null;
-  return g as PublicListing;
+async function publishPublicDirectory(client: UserDataClient, listing: PublicListing) {
+  const res = await fetch(PUBLIC_DIRECTORY, {
+    method: "PUT",
+    headers: { ...(await client.headers()), "Content-Type": "application/json" },
+    body: JSON.stringify(listing),
+  });
+  if (!res.ok) {
+    let message = res.statusText;
+    try {
+      const body = (await res.json()) as { message?: string };
+      if (body.message) message = body.message;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(message || `directory ${res.status}`);
+  }
+}
+
+async function unpublishPublicDirectory(client: UserDataClient, id: string) {
+  try {
+    await fetch(`${PUBLIC_DIRECTORY}?id=${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      headers: await client.headers(),
+    });
+  } catch {
+    /* ignore */
+  }
 }
 
 export async function getPublicGame(
@@ -401,82 +432,56 @@ export async function getPublicGame(
 }
 
 export async function listPublicLobbies(client: UserDataClient | null): Promise<PublicListing[]> {
-  const byId = new Map<string, PublicListing>();
-  for (const g of readLocalPublic()) collectListing(byId, g);
-  if (!client) {
-    return [...byId.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  }
-  try {
-    const listed = await client.list({
-      app: MEGAZEAR_APP,
-      visibility: "public",
-      path: "lobbies",
-    });
-    for (const entry of listed.keys ?? []) {
-      const raw = (entry.path || entry.key || "").replace(/^\/+/, "");
-      const cut = raw.indexOf("lobbies/");
-      const path = cut >= 0 ? raw.slice(cut) : raw.startsWith("lobbies") ? raw : "";
-      if (!path || path === "lobbies/index" || path === "lobbies") continue;
-      try {
-        const rec = await client.get<PublicListing>({
-          app: MEGAZEAR_APP,
-          visibility: "public",
-          path,
-        });
-        collectListing(byId, asListing(rec.data));
-      } catch {
-        /* skip one */
+  const own: PublicListing[] = [];
+  if (client) {
+    try {
+      const listed = await client.list({
+        app: MEGAZEAR_APP,
+        visibility: "public",
+        path: "lobbies",
+      });
+      for (const entry of listed.keys ?? []) {
+        const raw = (entry.path || entry.key || "").replace(/^\/+/, "");
+        const cut = raw.indexOf("lobbies/");
+        const path = cut >= 0 ? raw.slice(cut) : raw.startsWith("lobbies") ? raw : "";
+        if (!path || path === "lobbies/index" || path === "lobbies") continue;
+        try {
+          const rec = await client.get<PublicListing>({
+            app: MEGAZEAR_APP,
+            visibility: "public",
+            path,
+          });
+          const listing = asListing(rec.data);
+          if (listing) own.push(listing);
+        } catch {
+          /* skip one */
+        }
       }
+    } catch {
+      /* own prefix list is optional */
     }
-  } catch {
-    /* prefix list is optional */
   }
-  try {
-    const rec = await client.get<{ games: PublicListing[] }>({
-      app: MEGAZEAR_APP,
-      visibility: "public",
-      path: "lobbies/index",
-    });
-    for (const g of rec.data.games ?? []) collectListing(byId, g);
-  } catch {
-    /* no shared index yet */
-  }
-  return [...byId.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return mergeListings([readLocalPublic(), await fetchPublicDirectory(client), own]);
 }
 
-async function mergePublicIndex(client: UserDataClient, listing: PublicListing | null, removeId?: string) {
-  let games: PublicListing[] = [];
-  try {
-    const rec = await client.get<{ games: PublicListing[] }>({
-      app: MEGAZEAR_APP,
-      visibility: "public",
-      path: "lobbies/index",
-    });
-    games = rec.data.games ?? [];
-  } catch {
-    /* start empty */
-  }
-  games = games.filter((g) => g.id !== (listing?.id ?? removeId));
-  if (listing) games.unshift(listing);
-  games = games.slice(0, 80);
-  await client.put({
-    app: MEGAZEAR_APP,
-    visibility: "public",
-    path: "lobbies/index",
-    data: { version: SAVE_VERSION, games },
-  });
-}
-
-export async function upsertPublicLobby(client: UserDataClient | null, rec: GameRecord) {
+export async function upsertPublicLobby(
+  client: UserDataClient | null,
+  rec: GameRecord,
+  actorId?: string,
+): Promise<string | null> {
+  const isHost = !actorId || !rec.hostId || actorId === rec.hostId;
   if (rec.visibility !== "public" || rec.status !== "lobby") {
-    await removePublicLobby(client, rec.id);
-    return;
+    if (isHost) await removePublicLobby(client, rec.id);
+    return null;
   }
   const listing = listingOf(rec);
   const local = readLocalPublic().filter((g) => g.id !== rec.id);
   local.unshift(listing);
   writeLocalPublic(local);
-  if (!client) return;
+  if (!listing.hostId) {
+    return "Sign in to list this table for other commanders.";
+  }
+  if (!client || !isHost) return null;
   try {
     await client.put({
       app: MEGAZEAR_APP,
@@ -490,9 +495,11 @@ export async function upsertPublicLobby(client: UserDataClient | null, rec: Game
       path: `games/${rec.id}`,
       data: rec,
     });
-    await mergePublicIndex(client, listing);
+    await publishPublicDirectory(client, listing);
+    return null;
   } catch (err) {
     console.warn("public lobby publish failed", err);
+    return err instanceof Error ? err.message : "Could not list this table for other commanders.";
   }
 }
 
@@ -508,9 +515,5 @@ export async function removePublicLobby(client: UserDataClient | null, id: strin
   } catch {
     /* ignore */
   }
-  try {
-    await mergePublicIndex(client, null, id);
-  } catch {
-    /* ignore */
-  }
+  await unpublishPublicDirectory(client, id);
 }

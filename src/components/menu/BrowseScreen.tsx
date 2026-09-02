@@ -32,11 +32,11 @@ export function BrowseScreen() {
         <p className="text-xs uppercase tracking-[0.28em] text-muted">Open tables</p>
         <h1 className="mt-1 font-display text-4xl font-semibold">Browse games</h1>
         <p className="mt-2 text-sm text-muted">
-          Public matches that have not started. Tables are published to Megazear when the host is signed in. Full
+          Public matches that have not started. Signed-in hosts publish a table here for other commanders. Full
           tables are listed but cannot be joined.
         </p>
         {!identity.isAuthenticated && (
-          <p className="mt-2 text-sm text-subtle">Sign in to see tables other commanders have listed.</p>
+          <p className="mt-2 text-sm text-subtle">Sign in to join a table. Open public games are listed here.</p>
         )}
       </div>
 
@@ -68,7 +68,7 @@ export function BrowseScreen() {
                 )}
                 <Button
                   onClick={() => {
-                    void joinListing(g, codes[g.id] ?? "", identity.user).then(setError);
+                    void joinListing(g, codes[g.id] ?? "", identity.user, identity.client).then(setError);
                   }}
                 >
                   Join

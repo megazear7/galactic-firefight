@@ -35,6 +35,16 @@ export class UserDataError extends Error {
 export class UserDataClient {
   constructor(private readonly opts: UserDataClientOptions) {}
 
+  async headers(): Promise<Record<string, string>> {
+    const token = await this.opts.getToken();
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${token}`,
+    };
+    const idToken = (await this.opts.getIdToken?.())?.trim();
+    if (idToken) headers["X-ID-Token"] = idToken;
+    return headers;
+  }
+
   async get<T = unknown>(locator: DataLocator): Promise<{
     key: string;
     data: T;
@@ -116,7 +126,6 @@ export class UserDataClient {
     body?: { data?: unknown; metadata?: Record<string, string> },
     extraQuery?: Record<string, string | boolean>,
   ): Promise<unknown> {
-    const token = await this.opts.getToken();
     const url = new URL(this.opts.baseUrl);
     url.searchParams.set("app", locator.app);
     url.searchParams.set("visibility", locator.visibility);
@@ -130,11 +139,7 @@ export class UserDataClient {
       }
     }
 
-    const headers: Record<string, string> = {
-      Authorization: `Bearer ${token}`,
-    };
-    const idToken = (await this.opts.getIdToken?.())?.trim();
-    if (idToken) headers["X-ID-Token"] = idToken;
+    const headers = await this.headers();
     let payload: string | undefined;
     if (body && (method === "PUT" || method === "PATCH")) {
       headers["Content-Type"] = "application/json";

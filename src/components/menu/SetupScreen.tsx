@@ -112,7 +112,7 @@ export function SetupScreen() {
         <Button variant="ghost" onClick={() => setScreen("menu")}>
           Back
         </Button>
-        <Button className="flex-1" onClick={() => confirmCreate(identity.user)}>
+        <Button className="flex-1" onClick={() => confirmCreate(identity.user, identity.client)}>
           Continue to roster
         </Button>
       </div>

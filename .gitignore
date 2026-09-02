@@ -4,6 +4,7 @@ dist
 .output
 .nitro
 .tanstack
+.data
 *.log
 .env
 .env.*
