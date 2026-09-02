@@ -303,7 +303,11 @@ export function Hud() {
               Team {battle.turnTeam}
             </p>
             <p className="text-xs text-subtle">
-              {battle.mode === "single" ? "Opposing force" : "Waiting on opponent"}
+              {battle.mode === "single"
+                ? "Opposing force"
+                : yours
+                  ? "Your turn"
+                  : "Waiting on opponent"}
             </p>
           </div>
         </div>

@@ -916,14 +916,15 @@ export const useGame = create<Store>((set, get) => ({
         (participant) => participant.userId === userId || (userId === hostId && participant.host),
       );
       const mine = local?.faction ?? (userId === hostId ? shared.hostFaction : shared.guestFaction);
+      const isLocalTurn = local?.team === shared.battle.turnTeam;
       const localBattle = {
         ...shared.battle,
         playerId: local?.id ?? shared.battle.playerId,
         playerFaction: mine ?? shared.battle.playerFaction,
         phase:
-          local && shared.battle.turnTeam !== local.team && shared.battle.phase === "select"
+          local && !isLocalTurn && shared.battle.phase !== "gameOver"
             ? "enemyTurn"
-            : local && shared.battle.turnTeam === local.team && shared.battle.phase === "enemyTurn"
+            : local && isLocalTurn && shared.battle.phase === "enemyTurn"
               ? "select"
               : shared.battle.phase,
       };
