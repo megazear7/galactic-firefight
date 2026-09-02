@@ -1,4 +1,4 @@
-import { Minus, Plus, Trash2 } from "lucide-react";
+import { Copy, Minus, Plus, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,11 +38,17 @@ function SlotCard({
   host,
   localId,
   points,
+  gameId,
+  hostId,
+  onCopyInvite,
 }: {
   p: Participant;
   host: boolean;
   localId: string;
   points: number;
+  gameId?: string;
+  hostId?: string;
+  onCopyInvite: () => void;
 }) {
   const patch = useGame((s) => s.patchParticipant);
   const toggleReady = useGame((s) => s.toggleReady);
@@ -105,6 +111,16 @@ function SlotCard({
           onChange={(e) => patch(p.id, { name: e.target.value })}
           placeholder="Player name"
         />
+      )}
+      {p.kind === "invite" && gameId && hostId && (
+        <Button
+          variant="secondary"
+          className="mt-3 w-full"
+          onClick={onCopyInvite}
+        >
+          <Copy className="size-4" />
+          Copy invite link
+        </Button>
       )}
       {p.kind !== "open" && p.kind !== "invite" && (
         <>
@@ -217,7 +233,7 @@ function ScaleRow({
   onChange,
 }: {
   label: string;
-  hint: string;
+  hint?: string;
   value: TerrainBias;
   options: Record<TerrainBias, string>;
   disabled: boolean;
@@ -226,7 +242,7 @@ function ScaleRow({
   return (
     <section>
       <Label>{label}</Label>
-      <p className="mt-1 text-sm text-muted">{hint}</p>
+      {hint ? <p className="mt-1 text-sm text-muted">{hint}</p> : null}
       <div className="mt-3 grid grid-cols-3 gap-2">
         {([1, 2, 3] as const).map((n) => (
           <button
@@ -268,12 +284,35 @@ export function LobbyScreen() {
   const identity = useIdentity();
   const navigate = useNavigate();
   const statusMessage = useGame((s) => s.statusMessage);
-  const [invite, setInvite] = useState("");
   const localId = record?.playerId ?? participants.find((p) => p.host)?.id ?? "";
   const host = participants.find((p) => p.host)?.id === localId;
   const cap = slotCap(mapSize);
   const ready = humansReady(participants);
   const playCount = participants.filter(playable).length;
+  const hostId = record?.hostId ?? participants.find((p) => p.host)?.userId;
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteDraft, setInviteDraft] = useState("");
+  const [copyNotice, setCopyNotice] = useState<string | null>(null);
+
+  async function copyInviteLink() {
+    if (!record?.id || !hostId) return;
+    const url = `${window.location.origin}/join/${encodeURIComponent(hostId)}/${record.id}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopyNotice("Invite link copied");
+    } catch {
+      setCopyNotice("Could not copy invite link");
+    }
+  }
+
+  async function addInvite() {
+    const email = inviteDraft.trim();
+    if (!email) return;
+    addSlot("invite", email);
+    setInviteDraft("");
+    setInviteOpen(false);
+    await copyInviteLink();
+  }
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-5xl flex-col gap-6 px-5 py-8">
@@ -335,7 +374,6 @@ export function LobbyScreen() {
       <div className="grid gap-6 sm:grid-cols-2">
         <ScaleRow
           label="Terrain density"
-          hint="Tilts how much cover appears. Always a bit random."
           value={terrainDensity}
           options={TERRAIN_DENSITY_LABEL}
           disabled={!host}
@@ -343,7 +381,6 @@ export function LobbyScreen() {
         />
         <ScaleRow
           label="Terrain size"
-          hint="Tilts toward small bits or large masses. Always a mix."
           value={terrainSize}
           options={TERRAIN_SIZE_LABEL}
           disabled={!host}
@@ -353,7 +390,16 @@ export function LobbyScreen() {
 
       <div className="grid gap-3 md:grid-cols-2">
         {participants.map((p) => (
-          <SlotCard key={p.id} p={p} host={host} localId={localId} points={points} />
+          <SlotCard
+            key={p.id}
+            p={p}
+            host={host}
+            localId={localId}
+            points={points}
+            gameId={record?.id}
+            hostId={hostId}
+            onCopyInvite={() => void copyInviteLink()}
+          />
         ))}
       </div>
 
@@ -370,21 +416,58 @@ export function LobbyScreen() {
               Add open slot
             </Button>
           )}
-          <div className="flex min-w-[16rem] flex-1 gap-2">
+          <Button variant="secondary" onClick={() => setInviteOpen(true)}>
+            Invite by email
+          </Button>
+          {copyNotice ? <p className="self-center text-sm text-muted" role="status">{copyNotice}</p> : null}
+        </div>
+      )}
+
+      {inviteOpen && (
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center bg-bg/75 p-5 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="invite-dialog-title"
+          onClick={() => setInviteOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-[var(--radius-xl)] border border-border bg-surface p-5 shadow-[var(--shadow-panel)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.28em] text-muted">New invite</p>
+                <h2 id="invite-dialog-title" className="mt-1 font-display text-2xl font-semibold">
+                  Invite by email
+                </h2>
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => setInviteOpen(false)} aria-label="Close invite dialog">
+                <X className="size-4" />
+              </Button>
+            </div>
+            <p className="mt-4 text-sm text-muted">
+              Enter their email and you will get an invite link to send to that user.
+            </p>
+            <Label htmlFor="invite-recipient" className="mt-5 block">
+              Recipient email
+            </Label>
             <Input
-              placeholder="Invite email"
-              value={invite}
-              onChange={(e) => setInvite(e.target.value)}
-            />
-            <Button
-              variant="secondary"
-              disabled={!invite.trim()}
-              onClick={() => {
-                addSlot("invite", invite.trim());
-                setInvite("");
+              id="invite-recipient"
+              name="invite-recipient"
+              type="text"
+              autoComplete="off"
+              inputMode="email"
+              className="mt-2"
+              value={inviteDraft}
+              onChange={(e) => setInviteDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") addInvite();
               }}
-            >
-              Invite
+              autoFocus
+            />
+            <Button className="mt-5 w-full" disabled={!inviteDraft.trim()} onClick={addInvite}>
+              Add invite
             </Button>
           </div>
         </div>

@@ -38,7 +38,6 @@ export function SetupScreen() {
 
       <section>
         <Label>Pass code (optional)</Label>
-        <p className="mt-1 text-sm text-muted">Joining a public game will require this if you set one.</p>
         <Input className="mt-3" value={passcode} onChange={(e) => setPasscode(e.target.value)} placeholder="Leave blank for none" />
       </section>
 

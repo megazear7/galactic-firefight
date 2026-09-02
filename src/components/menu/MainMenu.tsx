@@ -56,15 +56,16 @@ export function MainMenu() {
           </div>
         </header>
 
-        <div className="max-w-xl">
+        <main className="flex flex-1 items-center justify-center">
+          <div className="w-full max-w-lg">
           <p className="font-display text-sm uppercase tracking-[0.32em] text-muted">Turn-based tactics</p>
           <h1 className="mt-2 font-display text-5xl font-semibold leading-[0.95] tracking-tight sm:text-7xl">
             Galactic Firefight
           </h1>
-          <p className="mt-4 max-w-md text-sm text-muted sm:text-base">
+          <p className="mt-4 text-sm text-muted sm:text-base">
             Steel captains against a living tide. Build a force, take the field, and spend each activation like it is the last.
           </p>
-          <div className="mt-8 flex max-w-sm flex-col gap-3">
+          <div className="mt-8 flex flex-col gap-3">
             <Button size="lg" asChild>
               <Link to="/create" onClick={() => { unlockAudio(settings); startSetup(); }}>
                 Create game
@@ -80,11 +81,9 @@ export function MainMenu() {
               <Link to="/games/resume">Resume saved game</Link>
             </Button>
           </div>
-        </div>
+          </div>
+        </main>
 
-        <p className="text-xs text-subtle">
-          {identity.isAuthenticated ? "Saves sync to Megazear identity." : "Saves stay in this browser until you sign in."}
-        </p>
       </div>
     </div>
   );

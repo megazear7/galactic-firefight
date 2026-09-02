@@ -400,6 +400,10 @@ export const useGame = create<Store>((set, get) => ({
     if (rec) {
       void saveGame(get().dataClient, rec);
       publishSharedLobby(get().dataClient, rec);
+      const dataClient = get().dataClient;
+      if (kind === "invite" && email && rec.hostId && dataClient) {
+        void grantGuestAcl(dataClient, rec.hostId, rec.id, { email: email.trim() });
+      }
       void upsertPublicLobby(get().dataClient, rec, rec.hostId).then((err) => {
         if (err) set({ statusMessage: err });
         else set({ statusMessage: null });
