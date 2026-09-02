@@ -71,42 +71,42 @@ function staticMesh(url: string, extras: Partial<Pick<UnitModelSet, "yawOffset" 
  */
 const CATALOG: Partial<Record<UnitType, Partial<Record<Faction, UnitModelSet>>>> = {
   soldier: {
-    empire: pack("empire", "soldier", { idle: 3, move: 2, reload: 1, melee: 1, dead: 3 }),
+    empire: pack("empire", "soldier", { idle: 1, move: 1, reload: 1, melee: 1, dead: 1 }),
   },
   captain: {
     empire: pack("empire", "captain", {
-      idle: 2,
+      idle: 1,
       idle_special: 1,
-      move: 2,
-      ranged: 2,
-      melee: 3,
-      dead: 3,
+      move: 1,
+      ranged: 1,
+      melee: 1,
+      dead: 1,
     }),
   },
   sniper: {
     empire: pack("empire", "sniper", {
-      idle: 2,
+      idle: 1,
       idle_special: 1,
-      move: 3,
-      ranged: 2,
+      move: 1,
+      ranged: 1,
       melee: 1,
-      dead: 2,
+      dead: 1,
     }),
   },
   machine_gunner: {
     empire: staticMesh("/assets/3d/machine-gunner/machine-gunner.glb"),
   },
   broodling: {
-    brood: pack("brood", "broodling", { idle: 5, move: 4, melee: 2, dead: 2 }, { filePrefix: "swarm" }),
+    brood: pack("brood", "broodling", { idle: 1, move: 1, melee: 1, dead: 1 }, { filePrefix: "swarm" }),
   },
   spatling: {
-    brood: pack("brood", "spatling", { idle: 2, move: 3, ranged: 2, dead: 2 }, { filePrefix: "swarm" }),
+    brood: pack("brood", "spatling", { idle: 1, move: 1, ranged: 1, dead: 1 }, { filePrefix: "swarm" }),
   },
   tyrant: {
     brood: pack(
       "brood",
       "tyrant",
-      { idle: 1, move: 1, melee: 4, ranged: 1, dead: 1 },
+      { idle: 1, move: 1, melee: 1, ranged: 1, dead: 1 },
       { filePrefix: "swarm", scale: 2 },
     ),
   },

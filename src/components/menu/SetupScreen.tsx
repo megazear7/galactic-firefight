@@ -56,7 +56,7 @@ export function SetupScreen() {
             >
               {MAP_SIZE_LABEL[s]}
               <span className="block text-xs font-sans uppercase tracking-wider text-subtle">
-                {MAP_SLOT_CAP[s]} players
+                Up to {MAP_SLOT_CAP[s]} players
               </span>
             </button>
           ))}

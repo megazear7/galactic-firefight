@@ -72,6 +72,16 @@ function ArcLines({
   );
 }
 
+function RangedArc({ facing, arc, range, moved, assault }: { facing: number; arc: number; range: number; moved: boolean; assault: boolean }) {
+  const reduced = moved && !assault;
+  return (
+    <>
+      {reduced && <ArcLines facing={facing} arc={arc} range={(range / 2) * TILE} color="#d8dde4" />}
+      <ArcLines facing={facing} arc={arc} range={range * TILE} color={reduced ? "#c45c4a" : "#d8dde4"} />
+    </>
+  );
+}
+
 export function MoveOverlay({ battle, unit }: { battle: BattleState; unit: UnitState }) {
   const stats = UNIT_STATS[unit.type];
   const origin = tileToWorld(unit.col, unit.row, battle.map);
@@ -149,13 +159,13 @@ export function MoveOverlay({ battle, unit }: { battle: BattleState; unit: UnitS
             <meshBasicMaterial color="#6fbf7a" />
           </mesh>
           {stats.range > 0 && (
-            <ArcLines facing={facing} arc={stats.arc} range={stats.range * TILE} color="#d8dde4" />
+            <RangedArc facing={facing} arc={stats.arc} range={stats.range} moved={unit.moved} assault={stats.assault} />
           )}
         </group>
       )}
       {(battle.phase === "aimShoot" || battle.actMode === "fire") && stats.range > 0 && (
         <group position={[origin.x, 0, origin.z]}>
-          <ArcLines facing={unit.facing} arc={stats.arc} range={stats.range * TILE} color="#d8dde4" />
+          <RangedArc facing={unit.facing} arc={stats.arc} range={stats.range} moved={unit.moved} assault={stats.assault} />
         </group>
       )}
       {targets.map((t) => {

@@ -902,5 +902,12 @@ describe("unit models", () => {
     assert.ok(urls.some((u) => u.includes("swarm-tyrant-idle-01.glb")));
     assert.ok(urls.some((u) => u.includes("swarm-tyrant-melee-01.glb")));
     assert.ok(urls.some((u) => u.includes("swarm-tyrant-ranged-01.glb")));
+    for (const type of ["soldier", "captain", "sniper", "machine_gunner", "broodling", "spatling", "tyrant"] as const) {
+      for (const set of [unitModelSet(type, type === "soldier" || type === "captain" || type === "sniper" || type === "machine_gunner" ? "empire" : "brood")]) {
+        if (!set) continue;
+        for (const clips of Object.values(set.clips)) assert.ok(clips.length <= 1);
+      }
+    }
+    assert.equal(urls.some((u) => /-0[2-9]\.glb$|-1[0-9]\.glb$/.test(u)), false);
   });
 });

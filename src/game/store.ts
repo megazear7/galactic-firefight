@@ -57,6 +57,7 @@ import type {
 } from "./types";
 import { DEFAULT_SETTINGS } from "./types";
 import { defaultLoadout } from "./units";
+import { randomGameName } from "./game-names";
 import type { UserDataClient } from "@/lib/identity/megazear-users";
 import {
   canAddSlot,
@@ -166,7 +167,7 @@ function blankRecord(partial: Partial<GameRecord>): GameRecord {
   return {
     version: 1,
     id: newGameId(),
-    name: "Firefight",
+    name: randomGameName(),
     createdAt: now,
     updatedAt: now,
     status: "setup",
@@ -212,7 +213,7 @@ export const useGame = create<Store>((set, get) => ({
   camFocus: null,
   camView: null,
   inviteEmail: "",
-  gameName: "Firefight",
+  gameName: randomGameName(),
   passcode: "",
   visibility: "private",
   participants: [],
@@ -248,7 +249,7 @@ export const useGame = create<Store>((set, get) => ({
       record: null,
       battle: null,
       statusMessage: null,
-      gameName: "Firefight",
+      gameName: randomGameName(),
       passcode: "",
       visibility: "private",
       participants: [],
@@ -335,7 +336,7 @@ export const useGame = create<Store>((set, get) => ({
         : { ...p, army: defaultLoadout(p.faction, points) },
     );
     const rec = blankRecord({
-      name: gameName.trim() || "Firefight",
+      name: gameName.trim() || randomGameName(),
       points,
       mapSize,
       terrainDensity,
@@ -636,7 +637,7 @@ export const useGame = create<Store>((set, get) => ({
         mapSize,
         playerFaction: faction,
         seed,
-        name: mode === "multi" ? "Linked firefight" : "Skirmish",
+        name: randomGameName(),
       });
     rec.battle = battle;
     rec.status = "active";

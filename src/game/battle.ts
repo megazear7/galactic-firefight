@@ -477,7 +477,7 @@ export function whyImmobile(state: BattleState, unit: UnitState): string | null 
   if (activationsDone(state) >= activationsCap(state) && !unit.moved) {
     return "This side has completed all available activations.";
   }
-  if (unit.moved && !unit.acted) return "Already moved — it may still fire or strike.";
+  if (unit.moved && !unit.acted) return "Range is halved after moving";
   if (state.phase === "enemyTurn") return "Another team is acting.";
   return null;
 }
