@@ -912,6 +912,8 @@ export const useGame = create<Store>((set, get) => ({
       return;
     }
     if (shared?.battle) {
+      const current = get().record;
+      if (current?.updatedAt && shared.updatedAt <= current.updatedAt) return;
       const local = shared.participants.find(
         (participant) => participant.userId === userId || (userId === hostId && participant.host),
       );

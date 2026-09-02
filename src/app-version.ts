@@ -1,2 +1,2 @@
 /** Bumped by `scripts/bump-app-version.mjs` at the start of production builds. */
-export const APP_VERSION = "20";
+export const APP_VERSION = "21";

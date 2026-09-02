@@ -51,6 +51,27 @@ export function AppSurface() {
   }, [screen, identity.client, userId]);
 
   useEffect(() => {
+    if (
+      screen !== "battle" ||
+      !identity.client ||
+      !userId ||
+      !battle?.mode ||
+      battle.mode !== "multi"
+    )
+      return;
+    const sync = () => {
+      if (document.visibilityState !== "visible") return;
+      void useGame.getState().syncMulti(identity.client!, userId!);
+    };
+    const id = window.setInterval(sync, 1000);
+    document.addEventListener("visibilitychange", sync);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", sync);
+    };
+  }, [screen, identity.client, userId, battle?.mode]);
+
+  useEffect(() => {
     if (!battle) return;
     const id = window.setInterval(() => persist(identity.client, identity.user?.id), 8000);
     const flush = () => persist(identity.client, identity.user?.id);
