@@ -15,3 +15,5 @@ AGENTS.md
 AGENTS.project.md
 src/routeTree.gen.ts
 .DS_Store
+public/sw.js
+public/app-version.json

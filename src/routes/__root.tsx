@@ -2,6 +2,7 @@ import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-r
 import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
 import { IdentityProvider } from "@/lib/identity/provider";
+import { AppUpdatingScreen } from "@/components/AppUpdatingScreen";
 import appCss from "../styles.css?url";
 
 const APP_NAME = "Galactic Firefight";
@@ -39,6 +40,7 @@ export const Route = createRootRoute({
         <AuthProvider>
           <IdentityProvider>
             <Outlet />
+            <AppUpdatingScreen />
           </IdentityProvider>
         </AuthProvider>
         <Scripts />

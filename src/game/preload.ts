@@ -1,6 +1,9 @@
 import { SPRITE_SRC } from "./units";
 import { allAudioUrls, warmAudioBank } from "./audio";
 import { allModelUrls } from "./models";
+import { APP_VERSION } from "@/app-version";
+
+const ASSET_CACHE = `gf-${import.meta.env?.VITE_APP_VERSION ?? APP_VERSION}`;
 
 const IMAGE_URLS = [
   ...Object.values(SPRITE_SRC),
@@ -41,7 +44,7 @@ async function decodeImage(url: string) {
 
 async function fetchOne(url: string) {
   try {
-    const cache = typeof caches !== "undefined" ? await caches.open("gf-assets-v1") : null;
+    const cache = typeof caches !== "undefined" ? await caches.open(ASSET_CACHE) : null;
     const cached = cache ? await cache.match(url) : null;
     if (!cached) {
       const res = await fetch(url);
