@@ -34,7 +34,9 @@ export function nid(prefix = "p") {
   return `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export function makeParticipant(partial: Partial<Participant> & Pick<Participant, "kind" | "faction">): Participant {
+export function makeParticipant(
+  partial: Partial<Participant> & Pick<Participant, "kind" | "faction">,
+): Participant {
   const points = (partial.army ? 100 : 100) as PointScale;
   return {
     id: partial.id ?? nid(),
@@ -61,7 +63,11 @@ export function makeParticipant(partial: Partial<Participant> & Pick<Participant
   };
 }
 
-export function defaultMatch(points: PointScale, local: { name: string; userId?: string; email?: string }): Participant[] {
+export function defaultMatch(
+  points: PointScale,
+  local: { name: string; userId?: string; email?: string },
+  opponent: "ai" | "open" = "ai",
+): Participant[] {
   const host = makeParticipant({
     kind: "human",
     name: local.name,
@@ -74,17 +80,17 @@ export function defaultMatch(points: PointScale, local: { name: string; userId?:
     ready: false,
     host: true,
   });
-  const ai = makeParticipant({
-    kind: "ai",
-    name: "Brood AI",
+  const second = makeParticipant({
+    kind: opponent,
+    name: opponent === "ai" ? "Brood AI" : "Open slot",
     faction: "brood",
     team: 2,
     color: 1,
     army: defaultLoadout("brood", points),
-    ready: true,
+    ready: opponent === "ai",
     host: false,
   });
-  return [host, ai];
+  return [host, second];
 }
 
 export function isDevicePlayer(p: Participant) {
@@ -132,7 +138,7 @@ export function shuffleTeams(teams: number[], seed: number) {
   const a = [...new Set(teams)];
   let s = seed >>> 0 || 1;
   const rand = () => {
-    s = (Math.imul(s ^ (s >>> 16), 0x45d9f3b) >>> 0);
+    s = Math.imul(s ^ (s >>> 16), 0x45d9f3b) >>> 0;
     return (s >>> 0) / 4294967296;
   };
   for (let i = a.length - 1; i > 0; i--) {
@@ -144,7 +150,12 @@ export function shuffleTeams(teams: number[], seed: number) {
 
 export function retuneArmies(participants: Participant[], points: PointScale): Participant[] {
   return participants.map((p) =>
-    playable(p) ? { ...p, army: p.army && Object.keys(p.army).length ? p.army : defaultLoadout(p.faction, points) } : p,
+    playable(p)
+      ? {
+          ...p,
+          army: p.army && Object.keys(p.army).length ? p.army : defaultLoadout(p.faction, points),
+        }
+      : p,
   );
 }
 
@@ -168,7 +179,8 @@ export function claimOpenSlot(
     userId: joiner.userId,
     email: joiner.email,
     ready: false,
-    army: seat.army && Object.keys(seat.army).length ? seat.army : defaultLoadout(seat.faction, points),
+    army:
+      seat.army && Object.keys(seat.army).length ? seat.army : defaultLoadout(seat.faction, points),
   };
   return next;
 }
@@ -180,7 +192,9 @@ export function claimInviteSlot(
 ): Participant[] | null {
   const email = joiner.email?.trim().toLowerCase();
   if (!email) return null;
-  const idx = participants.findIndex((p) => p.kind === "invite" && p.email?.trim().toLowerCase() === email);
+  const idx = participants.findIndex(
+    (p) => p.kind === "invite" && p.email?.trim().toLowerCase() === email,
+  );
   if (idx < 0) return null;
   const seat = participants[idx];
   const next = participants.slice();
@@ -191,7 +205,8 @@ export function claimInviteSlot(
     userId: joiner.userId,
     email: joiner.email,
     ready: false,
-    army: seat.army && Object.keys(seat.army).length ? seat.army : defaultLoadout(seat.faction, points),
+    army:
+      seat.army && Object.keys(seat.army).length ? seat.army : defaultLoadout(seat.faction, points),
   };
   return next;
 }

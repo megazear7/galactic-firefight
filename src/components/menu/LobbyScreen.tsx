@@ -4,14 +4,45 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useGame } from "@/game/store";
-import { FACTION_NAME, SPRITE_SRC, UNIT_STATS, armyCost, factionUnits, freeLeaders, leaderType, maxExtraLeaders, remainingPoints } from "@/game/units";
-import { MAP_SIZE_LABEL, TERRAIN_DENSITY_LABEL, TERRAIN_SIZE_LABEL, TERRAIN_THEME_LABEL } from "@/game/map";
-import { PLAYER_PALETTE, type Faction, type Participant, type TerrainBias, type UnitType } from "@/game/types";
+import {
+  FACTION_NAME,
+  SPRITE_SRC,
+  UNIT_STATS,
+  armyCost,
+  factionUnits,
+  freeLeaders,
+  leaderType,
+  maxExtraLeaders,
+  remainingPoints,
+} from "@/game/units";
+import {
+  MAP_SIZE_LABEL,
+  TERRAIN_DENSITY_LABEL,
+  TERRAIN_SIZE_LABEL,
+  TERRAIN_THEME_LABEL,
+} from "@/game/map";
+import {
+  PLAYER_PALETTE,
+  type Faction,
+  type Participant,
+  type TerrainBias,
+  type UnitType,
+} from "@/game/types";
 import { humansReady, playable, slotCap } from "@/game/lobby";
 import { cn } from "@/lib/utils";
 import { useIdentity } from "@/lib/identity/provider";
 
-function SlotCard({ p, host, localId, points }: { p: Participant; host: boolean; localId: string; points: number }) {
+function SlotCard({
+  p,
+  host,
+  localId,
+  points,
+}: {
+  p: Participant;
+  host: boolean;
+  localId: string;
+  points: number;
+}) {
   const patch = useGame((s) => s.patchParticipant);
   const toggleReady = useGame((s) => s.toggleReady);
   const removeSlot = useGame((s) => s.removeSlot);
@@ -29,7 +60,8 @@ function SlotCard({ p, host, localId, points }: { p: Participant; host: boolean;
     const free = freeLeaders(p.faction, points as 100 | 200 | 300);
     if (type === leader && next < free) return;
     if (type === leader && next > free + maxExtraLeaders(p.faction)) return;
-    if (dir > 0 && remainingPoints(p.faction, points as 100 | 200 | 300, p.army) < stats.cost) return;
+    if (dir > 0 && remainingPoints(p.faction, points as 100 | 200 | 300, p.army) < stats.cost)
+      return;
     patch(p.id, { army: { ...p.army, [type]: next }, ready: p.kind === "ai" });
   }
 
@@ -53,7 +85,13 @@ function SlotCard({ p, host, localId, points }: { p: Participant; host: boolean;
           </p>
         </div>
         {host && !p.host && (
-          <Button variant="ghost" size="icon" className="size-8" onClick={() => removeSlot(p.id)} aria-label="Remove">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            onClick={() => removeSlot(p.id)}
+            aria-label="Remove"
+          >
             <Trash2 className="size-3.5" />
           </Button>
         )}
@@ -110,7 +148,10 @@ function SlotCard({ p, host, localId, points }: { p: Participant; host: boolean;
                 disabled={!canEdit}
                 aria-label={c.name}
                 onClick={() => patch(p.id, { color: c.id })}
-                className={cn("size-7 rounded-full border-2", p.color === c.id ? "border-fg" : "border-transparent")}
+                className={cn(
+                  "size-7 rounded-full border-2",
+                  p.color === c.id ? "border-fg" : "border-transparent",
+                )}
                 style={{ background: c.hex }}
               />
             ))}
@@ -122,13 +163,28 @@ function SlotCard({ p, host, localId, points }: { p: Participant; host: boolean;
             <div className="mt-2 grid gap-1">
               {factionUnits(p.faction).map((type) => (
                 <div key={type} className="flex items-center gap-2">
-                  <img src={SPRITE_SRC[type]} alt="" className="h-8 w-6 object-contain" crossOrigin="anonymous" />
+                  <img
+                    src={SPRITE_SRC[type]}
+                    alt=""
+                    className="h-8 w-6 object-contain"
+                    crossOrigin="anonymous"
+                  />
                   <span className="flex-1 truncate text-sm">{UNIT_STATS[type].name}</span>
-                  <Button variant="secondary" size="icon" className="size-7" onClick={() => bump(type, -1)}>
+                  <Button
+                    variant="secondary"
+                    size="icon"
+                    className="size-7"
+                    onClick={() => bump(type, -1)}
+                  >
                     <Minus className="size-3" />
                   </Button>
                   <span className="w-5 text-center font-mono text-xs">{p.army[type] ?? 0}</span>
-                  <Button variant="secondary" size="icon" className="size-7" onClick={() => bump(type, 1)}>
+                  <Button
+                    variant="secondary"
+                    size="icon"
+                    className="size-7"
+                    onClick={() => bump(type, 1)}
+                  >
                     <Plus className="size-3" />
                   </Button>
                 </div>
@@ -138,9 +194,13 @@ function SlotCard({ p, host, localId, points }: { p: Participant; host: boolean;
         </>
       )}
 
-      {(p.kind === "human" || p.kind === "local") && (
-        <Button className="mt-3 w-full" variant={p.ready ? "secondary" : "default"} onClick={() => toggleReady(p.id)}>
-          {p.ready ? "Ready" : "Mark ready"}
+      {(p.kind === "human" || p.kind === "local") && p.id === localId && (
+        <Button
+          className="mt-3 w-full"
+          variant={p.ready ? "secondary" : "default"}
+          onClick={() => toggleReady(p.id)}
+        >
+          {p.ready ? "Ready" : "Mark as ready"}
         </Button>
       )}
     </div>
@@ -180,7 +240,9 @@ function ScaleRow({
             )}
           >
             {n}
-            <span className="block text-xs font-sans uppercase tracking-wider text-subtle">{options[n]}</span>
+            <span className="block text-xs font-sans uppercase tracking-wider text-subtle">
+              {options[n]}
+            </span>
           </button>
         ))}
       </div>
@@ -218,7 +280,9 @@ export function LobbyScreen() {
         <p className="text-xs uppercase tracking-[0.28em] text-muted">Roster</p>
         <h1 className="mt-1 font-display text-4xl font-semibold">{record?.name ?? "Firefight"}</h1>
         {visibility === "public" && !identity.isAuthenticated && (
-          <p className="mt-2 text-sm text-subtle">Sign in to list this table for other commanders.</p>
+          <p className="mt-2 text-sm text-subtle">
+            Sign in to list this table for other commanders.
+          </p>
         )}
         {statusMessage ? <p className="mt-2 text-sm text-danger">{statusMessage}</p> : null}
         <dl className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted">
@@ -252,7 +316,9 @@ export function LobbyScreen() {
                 !host && "cursor-default opacity-80",
               )}
             >
-              <span className="font-display text-lg leading-tight">{TERRAIN_THEME_LABEL[theme]}</span>
+              <span className="font-display text-lg leading-tight">
+                {TERRAIN_THEME_LABEL[theme]}
+              </span>
               <span className="block text-[11px] leading-snug text-subtle">
                 {theme === "spaceship"
                   ? "Cargo crates and bulkheads"
@@ -304,7 +370,11 @@ export function LobbyScreen() {
             </Button>
           )}
           <div className="flex min-w-[16rem] flex-1 gap-2">
-            <Input placeholder="Invite email" value={invite} onChange={(e) => setInvite(e.target.value)} />
+            <Input
+              placeholder="Invite email"
+              value={invite}
+              onChange={(e) => setInvite(e.target.value)}
+            />
             <Button
               variant="secondary"
               disabled={!invite.trim()}

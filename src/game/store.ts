@@ -74,7 +74,8 @@ import {
 } from "./lobby";
 import { localParticipant } from "./battle";
 
-export type Screen = "menu" | "create" | "lobby" | "browse" | "setup" | "army" | "battle" | "resume" | "join";
+export type Screen =
+  "menu" | "create" | "lobby" | "browse" | "setup" | "army" | "battle" | "resume" | "join";
 
 type Store = {
   screen: Screen;
@@ -183,6 +184,12 @@ function blankRecord(partial: Partial<GameRecord>): GameRecord {
     battle: null,
     ...partial,
   };
+}
+
+function publishSharedLobby(client: UserDataClient | null, record: GameRecord | null) {
+  if (client && record?.mode === "multi" && record.hostId) {
+    void putSharedGame(client, record.hostId, record.id, record);
+  }
 }
 
 export const useGame = create<Store>((set, get) => ({
@@ -302,12 +309,30 @@ export const useGame = create<Store>((set, get) => ({
   confirmCreate: (user, client) => {
     if (client !== undefined) set({ dataClient: client });
     const dataClient = get().dataClient;
-    const { points, mapSize, terrainDensity, terrainSize, terrainTheme, gameName, passcode, visibility, faction } = get();
-    const participants = defaultMatch(points, {
-      name: user?.name || user?.email || "You",
-      userId: user?.id,
-      email: user?.email,
-    }).map((p) => (p.host ? { ...p, faction, army: defaultLoadout(faction, points) } : { ...p, army: defaultLoadout(p.faction, points) }));
+    const {
+      points,
+      mapSize,
+      terrainDensity,
+      terrainSize,
+      terrainTheme,
+      gameName,
+      passcode,
+      visibility,
+      faction,
+    } = get();
+    const participants = defaultMatch(
+      points,
+      {
+        name: user?.name || user?.email || "You",
+        userId: user?.id,
+        email: user?.email,
+      },
+      visibility === "public" ? "open" : "ai",
+    ).map((p) =>
+      p.host
+        ? { ...p, faction, army: defaultLoadout(faction, points) }
+        : { ...p, army: defaultLoadout(p.faction, points) },
+    );
     const rec = blankRecord({
       name: gameName.trim() || "Firefight",
       points,
@@ -323,11 +348,22 @@ export const useGame = create<Store>((set, get) => ({
       hostId: user?.id,
       hostEmail: user?.email,
       status: "lobby",
-      mode: visibility === "public" || participants.some((p) => p.kind === "open" || p.kind === "invite") ? "multi" : "single",
+      mode:
+        visibility === "public" ||
+        participants.some((p) => p.kind === "open" || p.kind === "invite")
+          ? "multi"
+          : "single",
     });
     sfx.confirm();
-    set({ record: rec, participants, screen: "lobby", faction: participants[0].faction, army: participants[0].army });
+    set({
+      record: rec,
+      participants,
+      screen: "lobby",
+      faction: participants[0].faction,
+      army: participants[0].army,
+    });
     void saveGame(dataClient, rec);
+    publishSharedLobby(dataClient, rec);
     void upsertPublicLobby(dataClient, rec, user?.id).then((err) => {
       if (err) set({ statusMessage: err });
     });
@@ -356,10 +392,13 @@ export const useGame = create<Store>((set, get) => ({
       ready: kind === "ai",
     });
     const next = [...participants, slot];
-    const rec = get().record ? { ...get().record!, participants: next, updatedAt: new Date().toISOString() } : get().record;
+    const rec = get().record
+      ? { ...get().record!, participants: next, updatedAt: new Date().toISOString() }
+      : get().record;
     set({ participants: next, record: rec });
     if (rec) {
       void saveGame(get().dataClient, rec);
+      publishSharedLobby(get().dataClient, rec);
       void upsertPublicLobby(get().dataClient, rec, rec.hostId).then((err) => {
         if (err) set({ statusMessage: err });
         else set({ statusMessage: null });
@@ -372,10 +411,13 @@ export const useGame = create<Store>((set, get) => ({
     if (!target || target.host) return;
     sfx.ui();
     const next = participants.filter((p) => p.id !== id);
-    const rec = record ? { ...record, participants: next, updatedAt: new Date().toISOString() } : record;
+    const rec = record
+      ? { ...record, participants: next, updatedAt: new Date().toISOString() }
+      : record;
     set({ participants: next, record: rec });
     if (rec) {
       void saveGame(get().dataClient, rec);
+      publishSharedLobby(get().dataClient, rec);
       void upsertPublicLobby(get().dataClient, rec, rec.hostId);
     }
   },
@@ -390,10 +432,13 @@ export const useGame = create<Store>((set, get) => ({
       }
       return merged;
     });
-    const rec = record ? { ...record, participants: next, updatedAt: new Date().toISOString() } : record;
+    const rec = record
+      ? { ...record, participants: next, updatedAt: new Date().toISOString() }
+      : record;
     set({ participants: next, record: rec });
     if (rec) {
       void saveGame(get().dataClient, rec);
+      publishSharedLobby(get().dataClient, rec);
       void upsertPublicLobby(get().dataClient, rec, rec.hostId);
     }
   },
@@ -401,10 +446,13 @@ export const useGame = create<Store>((set, get) => ({
     const { participants, record } = get();
     sfx.ui();
     const next = participants.map((p) => (p.id === id ? { ...p, ready: !p.ready } : p));
-    const rec = record ? { ...record, participants: next, updatedAt: new Date().toISOString() } : record;
+    const rec = record
+      ? { ...record, participants: next, updatedAt: new Date().toISOString() }
+      : record;
     set({ participants: next, record: rec });
     if (rec) {
       void saveGame(get().dataClient, rec);
+      publishSharedLobby(get().dataClient, rec);
       void upsertPublicLobby(get().dataClient, rec, rec.hostId);
     }
   },
@@ -415,12 +463,24 @@ export const useGame = create<Store>((set, get) => ({
     set({ battle: beginHotseat(battle) });
   },
   startMatch: () => {
-    const { record, participants, points, mapSize, terrainDensity, terrainSize, terrainTheme, mode } = get();
+    const {
+      record,
+      participants,
+      points,
+      mapSize,
+      terrainDensity,
+      terrainSize,
+      terrainTheme,
+      mode,
+    } = get();
     if (!humansReady(participants)) return;
     const play = participants.filter(playable);
     if (play.length < 2) return;
-    const seed = record?.seed ?? ((Math.random() * 1e9) | 0);
-    const teamOrder = shuffleTeams(play.map((p) => p.team), seed);
+    const seed = record?.seed ?? (Math.random() * 1e9) | 0;
+    const teamOrder = shuffleTeams(
+      play.map((p) => p.team),
+      seed,
+    );
     const localId = record?.playerId ?? play.find((p) => p.host)?.id ?? play[0].id;
     const battle = createBattle({
       seed,
@@ -488,8 +548,15 @@ export const useGame = create<Store>((set, get) => ({
       game.points,
     );
     if (!claimed) return "No open slots.";
-    const playerId = claimed.find((p) => p.userId === user?.id || p.name === (user?.name || user?.email || "Guest"))?.id;
-    const next = { ...game, participants: claimed, playerId: playerId ?? game.playerId, status: "lobby" as const };
+    const playerId = claimed.find(
+      (p) => p.userId === user?.id || p.name === (user?.name || user?.email || "Guest"),
+    )?.id;
+    const next = {
+      ...game,
+      participants: claimed,
+      playerId: playerId ?? game.playerId,
+      status: "lobby" as const,
+    };
     sfx.confirm();
     set({
       record: next,
@@ -500,7 +567,9 @@ export const useGame = create<Store>((set, get) => ({
       terrainDensity: next.terrainDensity ?? 2,
       terrainSize: next.terrainSize ?? 2,
       terrainTheme:
-        next.terrainTheme === "infestation" || next.terrainTheme === "wartorn" ? next.terrainTheme : "spaceship",
+        next.terrainTheme === "infestation" || next.terrainTheme === "wartorn"
+          ? next.terrainTheme
+          : "spaceship",
       visibility: next.visibility,
       gameName: next.name,
     });
@@ -518,10 +587,20 @@ export const useGame = create<Store>((set, get) => ({
       return;
     }
     unlockAudio(get().settings);
-    const { faction, army, points, mapSize, terrainDensity, terrainSize, terrainTheme, mode, record } = get();
+    const {
+      faction,
+      army,
+      points,
+      mapSize,
+      terrainDensity,
+      terrainSize,
+      terrainTheme,
+      mode,
+      record,
+    } = get();
     const enemyFaction: Faction = faction === "empire" ? "brood" : "empire";
     const enemyArmy = opts?.enemyArmy ?? defaultEnemyArmy(enemyFaction, points);
-    const seed = record?.seed ?? ((Math.random() * 1e9) | 0);
+    const seed = record?.seed ?? (Math.random() * 1e9) | 0;
     const first = opts?.first ?? (Math.random() < 0.5 ? "empire" : "brood");
     const battle = createBattle({
       seed,
@@ -566,7 +645,10 @@ export const useGame = create<Store>((set, get) => ({
       mapSize: g.mapSize ?? "medium",
       terrainDensity: g.terrainDensity ?? 2,
       terrainSize: g.terrainSize ?? 2,
-      terrainTheme: g.terrainTheme === "infestation" || g.terrainTheme === "wartorn" ? g.terrainTheme : "spaceship",
+      terrainTheme:
+        g.terrainTheme === "infestation" || g.terrainTheme === "wartorn"
+          ? g.terrainTheme
+          : "spaceship",
       visibility: g.visibility ?? "private",
       participants: g.participants ?? [],
       gameName: g.name,
@@ -612,7 +694,8 @@ export const useGame = create<Store>((set, get) => ({
     set({ hoverCol: col, hoverRow: row });
     const battle = get().battle;
     if (!battle) return;
-    if (battle.phase === "moving" || battle.phase === "resolving" || battle.phase === "enemyTurn") return;
+    if (battle.phase === "moving" || battle.phase === "resolving" || battle.phase === "enemyTurn")
+      return;
     if (battle.phase === "aimFacing" && battle.pendingMove && col !== null && row !== null) {
       const dest = { col: battle.pendingMove.destCol, row: battle.pendingMove.destRow };
       const facing = Math.atan2(row - dest.row, col - dest.col);
@@ -689,7 +772,8 @@ export const useGame = create<Store>((set, get) => ({
       const next = stepMove(battle, dt);
       if (next.fx.length > prevFx) {
         const watcher = next.units.find(
-          (u) => u.overwatchedThisTurn && !battle.units.find((p) => p.id === u.id)?.overwatchedThisTurn,
+          (u) =>
+            u.overwatchedThisTurn && !battle.units.find((p) => p.id === u.id)?.overwatchedThisTurn,
         );
         if (watcher) sfx.attack(watcher.type, watcher.faction);
         else sfx.shot();
@@ -716,8 +800,7 @@ export const useGame = create<Store>((set, get) => ({
       aiTimer -= dt;
       if (aiTimer <= 0) {
         const next = applyAiIntent(battle);
-        const extra =
-          next.phase === "moving" ? 0 : next.phase === "resolving" ? 0.35 : 0.5;
+        const extra = next.phase === "moving" ? 0 : next.phase === "resolving" ? 0.35 : 0.5;
         if (next.phase === "resolving") {
           const attacker = next.units.find((u) => u.id === next.pendingShot?.attackerId);
           if (next.pendingShot?.kind === "melee") sfx.melee();
@@ -760,7 +843,12 @@ export const useGame = create<Store>((set, get) => ({
     set({ record: next });
     void saveGame(client, next);
     if (record.mode === "multi" && client && record.hostId) {
-      void putSharedGame(client, record.hostId === undefined ? undefined : record.hostId, record.id, next);
+      void putSharedGame(
+        client,
+        record.hostId === undefined ? undefined : record.hostId,
+        record.id,
+        next,
+      );
     }
   },
   hydrateJoin: (hostId, gameId) => {
@@ -777,6 +865,19 @@ export const useGame = create<Store>((set, get) => ({
     const gameId = record?.id ?? joinGameId;
     if (!hostId || !gameId) return;
     const shared = await getSharedGame(client, hostId, gameId);
+    if (shared?.status === "lobby") {
+      const current = get().record;
+      if (!current || shared.updatedAt >= current.updatedAt) {
+        const local = shared.participants.find(
+          (p) => p.userId === userId || (userId === hostId && p.host),
+        );
+        set({
+          record: { ...shared, playerId: local?.id ?? shared.playerId },
+          participants: shared.participants,
+        });
+      }
+      return;
+    }
     if (shared?.battle) {
       const mine = userId === hostId ? shared.hostFaction : shared.guestFaction;
       startAmbience();

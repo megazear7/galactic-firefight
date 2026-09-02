@@ -38,6 +38,14 @@ function Home() {
   }, [identity.client]);
 
   useEffect(() => {
+    if (screen !== "lobby" || !identity.client || !identity.user?.id) return;
+    const sync = () => void useGame.getState().syncMulti(identity.client!, identity.user!.id);
+    sync();
+    const id = window.setInterval(sync, 2000);
+    return () => window.clearInterval(id);
+  }, [screen, identity.client, identity.user?.id]);
+
+  useEffect(() => {
     if (!battle && screen !== "lobby") return;
     const id = window.setInterval(() => persist(identity.client, identity.user?.id), 8000);
     const flush = () => persist(identity.client, identity.user?.id);
