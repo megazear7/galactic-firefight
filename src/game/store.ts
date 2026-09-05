@@ -135,7 +135,7 @@ type Store = {
   removeSlot: (id: string) => void;
   patchParticipant: (id: string, patch: Partial<Participant>) => void;
   toggleReady: (id: string) => void;
-  startMatch: () => void;
+  startMatch: () => Promise<void>;
   startHotseat: () => void;
   joinListing: (
     listing: PublicListing,
@@ -485,7 +485,7 @@ export const useGame = create<Store>((set, get) => ({
     sfx.confirm();
     set({ battle: beginHotseat(battle) });
   },
-  startMatch: () => {
+  startMatch: async () => {
     const {
       record,
       participants,
@@ -530,10 +530,32 @@ export const useGame = create<Store>((set, get) => ({
       terrainSize,
       terrainTheme,
     };
+    const client = get().dataClient;
+    const hostId = rec.hostId;
+    const guest = participants.find((participant) => !participant.host && participant.userId);
+    if (client && hostId && guest?.userId) {
+      try {
+        await grantGuestAcl(client, hostId, rec.id, { userId: guest.userId });
+        await client.setPublicWriteAccess(MEGAZEAR_APP, false, hostId);
+        await client.setPublicWriteByUser(MEGAZEAR_APP, [`games/${rec.id}/state`], hostId);
+        battleAccessConfigured.add(`${hostId}/${rec.id}`);
+      } catch (error) {
+        set({
+          statusMessage:
+            error instanceof Error
+              ? `Could not authorize the second player: ${error.message}`
+              : "Could not authorize the second player.",
+        });
+        return;
+      }
+    }
     sfx.confirm();
     startAmbience();
     set({ battle, record: rec, screen: "battle", participants });
     void saveGame(get().dataClient, rec);
+    if (client && hostId) {
+      void putSharedGame(client, hostId, rec.id, rec);
+    }
     void removePublicLobby(get().dataClient, rec.id);
   },
   joinListing: async (listing, code, user, passedClient) => {
