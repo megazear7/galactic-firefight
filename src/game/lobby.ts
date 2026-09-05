@@ -10,6 +10,7 @@ import type {
   SlotKind,
 } from "./types";
 import { MAP_SLOT_CAP, PLAYER_PALETTE } from "./types";
+import { canAddSlotCount } from "./lobby-rules";
 
 export function slotCap(size: MapSize) {
   return MAP_SLOT_CAP[size];
@@ -159,8 +160,8 @@ export function retuneArmies(participants: Participant[], points: PointScale): P
   );
 }
 
-export function canAddSlot(participants: Participant[], size: MapSize) {
-  return participants.length < slotCap(size);
+export function canAddSlot(participants: Participant[], size: MapSize, isPublic = false) {
+  return canAddSlotCount(participants.length, slotCap(size), isPublic);
 }
 
 export function claimOpenSlot(

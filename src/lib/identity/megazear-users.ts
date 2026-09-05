@@ -18,6 +18,16 @@ export type PutInput = DataLocator & {
   metadata?: Record<string, string>;
 };
 
+export type ListDataResult<T = unknown> = {
+  prefix: string;
+  items: Array<{
+    key: string;
+    path: string;
+    data: T;
+    metadata: Record<string, string> | null;
+  }>;
+};
+
 export class UserDataError extends Error {
   status: number;
   code: string;
@@ -45,7 +55,9 @@ export class UserDataClient {
     return headers;
   }
 
-  async get<T = unknown>(locator: DataLocator): Promise<{
+  async get<T = unknown>(
+    locator: DataLocator,
+  ): Promise<{
     key: string;
     data: T;
     metadata: Record<string, string> | null;
@@ -57,7 +69,9 @@ export class UserDataClient {
     }>;
   }
 
-  async put<T = unknown>(input: PutInput): Promise<{
+  async put<T = unknown>(
+    input: PutInput,
+  ): Promise<{
     key: string;
     data: T;
     metadata: Record<string, string> | null;
@@ -72,7 +86,9 @@ export class UserDataClient {
     }>;
   }
 
-  async patch<T = unknown>(input: PutInput): Promise<{
+  async patch<T = unknown>(
+    input: PutInput,
+  ): Promise<{
     key: string;
     data: T;
     metadata: Record<string, string> | null;
@@ -99,6 +115,12 @@ export class UserDataClient {
       prefix: string;
       keys: Array<{ key: string; path: string }>;
     }>;
+  }
+
+  async listData<T = unknown>(locator: DataLocator): Promise<ListDataResult<T>> {
+    return this.request("GET", locator, undefined, { listData: true }) as Promise<
+      ListDataResult<T>
+    >;
   }
 
   async getAcl(app: string, targetUserId?: string) {
@@ -133,6 +155,21 @@ export class UserDataClient {
       // The first public write creates the ACL document.
     }
     return this.putAcl(app, { ...acl, publicWrite: enabled }, targetUserId);
+  }
+
+  async setPublicWriteByUser(app: string, paths: string[], targetUserId?: string) {
+    let acl: { version: 1; updatedAt: string; entries: unknown[] } = {
+      version: 1,
+      updatedAt: new Date().toISOString(),
+      entries: [],
+    };
+    try {
+      const current = await this.getAcl(app, targetUserId);
+      acl = current.data as typeof acl;
+    } catch {
+      // The first public-write rule creates the ACL document.
+    }
+    return this.putAcl(app, { ...acl, publicWriteByUser: paths }, targetUserId);
   }
 
   private async request(

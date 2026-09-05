@@ -20,7 +20,7 @@ import {
   waitUnit,
   ageFx,
 } from "./battle";
-import { revealExplored } from "./vision";
+import { localTeam, revealExplored, visionMask } from "./vision";
 import type { ActMode } from "./types";
 import { meleeEnemies, rangedTargets } from "./combat";
 import { sfx, unlockAudio, applyVolumes, startAmbience, stopAmbience } from "./audio";
@@ -31,6 +31,8 @@ import {
   loadSettings,
   newGameId,
   putHostLobby,
+  listPlayerViewports,
+  putPlayerViewport,
   putSharedGame,
   removePublicLobby,
   saveGame,
@@ -46,6 +48,7 @@ import type {
   GameVisibility,
   MapSize,
   Participant,
+  PlayerViewportState,
   PlayMode,
   PointScale,
   PublicListing,
@@ -68,7 +71,6 @@ import {
   humansReady,
   makeParticipant,
   nextColor,
-  nextTeam,
   passcodeOk,
   playable,
   shuffleTeams,
@@ -188,6 +190,8 @@ function blankRecord(partial: Partial<GameRecord>): GameRecord {
     ...partial,
   };
 }
+
+const battleAccessConfigured = new Set<string>();
 
 function publishSharedLobby(client: UserDataClient | null, record: GameRecord | null) {
   if (client && record?.mode === "multi" && record.hostId) {
@@ -385,14 +389,14 @@ export const useGame = create<Store>((set, get) => ({
   },
   addSlot: async (kind, email) => {
     const { participants, mapSize, points, visibility } = get();
-    if (!canAddSlot(participants, mapSize)) return;
+    if (!canAddSlot(participants, mapSize, visibility === "public")) return;
     if (kind === "open" && visibility !== "public") return;
     sfx.ui();
     const faction: Faction = participants.length % 2 === 0 ? "empire" : "brood";
     const slot = makeParticipant({
       kind,
       faction,
-      team: nextTeam(participants),
+      team: participants.some((participant) => participant.team === 1) ? 2 : 1,
       color: nextColor(participants.map((p) => p.color)),
       army: defaultLoadout(faction, points),
       email: email?.trim() || undefined,
@@ -866,6 +870,23 @@ export const useGame = create<Store>((set, get) => ({
       void upsertPublicLobby(client, record, actorId);
       return;
     }
+    const participant = record.participants.find(
+      (candidate) => candidate.userId === actorId || (actorId === record.hostId && candidate.host),
+    );
+    if (record.mode === "multi" && client && actorId && record.hostId && participant) {
+      const viewport: PlayerViewportState = {
+        version: 1,
+        userId: actorId,
+        camView: get().camView,
+        visible: visionMask(battle, participant.team),
+        explored: battle.explored,
+        updatedAt: new Date().toISOString(),
+      };
+      void putPlayerViewport(client, record.hostId, record.id, viewport);
+    }
+    if (record.mode === "multi") {
+      if (!participant || participant.team !== battle.turnTeam) return;
+    }
     const status: GameRecord["status"] =
       battle.winner === (record.participants.find((p) => p.id === record.playerId)?.team ?? 1)
         ? "victory"
@@ -876,11 +897,16 @@ export const useGame = create<Store>((set, get) => ({
     set({ record: next });
     void saveGame(client, next);
     if (record.mode === "multi" && client && record.hostId) {
+      const sharedNext = {
+        ...next,
+        battle: next.battle ? { ...next.battle, explored: [] } : null,
+      };
       void putSharedGame(
         client,
         record.hostId === undefined ? undefined : record.hostId,
         record.id,
-        next,
+        sharedNext,
+        actorId,
       );
     }
   },
@@ -913,6 +939,22 @@ export const useGame = create<Store>((set, get) => ({
     }
     if (shared?.battle) {
       const current = get().record;
+      const accessKey = `${hostId}/${gameId}`;
+      if (userId === hostId && client && !battleAccessConfigured.has(accessKey)) {
+        const guest = shared.participants.find(
+          (participant) => !participant.host && participant.userId,
+        );
+        if (guest?.userId) {
+          try {
+            await grantGuestAcl(client, hostId, gameId, { userId: guest.userId });
+            await client.setPublicWriteAccess(MEGAZEAR_APP, false, hostId);
+            await client.setPublicWriteByUser(MEGAZEAR_APP, [`games/${gameId}/state`], hostId);
+            battleAccessConfigured.add(accessKey);
+          } catch {
+            // Retry ACL setup on the next synchronization pass.
+          }
+        }
+      }
       if (current?.updatedAt && shared.updatedAt <= current.updatedAt) return;
       const local = shared.participants.find(
         (participant) => participant.userId === userId || (userId === hostId && participant.host),
@@ -930,10 +972,16 @@ export const useGame = create<Store>((set, get) => ({
               ? "select"
               : shared.battle.phase,
       };
+      const viewports = await listPlayerViewports(client, hostId, gameId);
+      const viewport = viewports.find((candidate) => candidate.userId === userId);
+      if (viewport) {
+        localBattle.explored = viewport.explored;
+      }
       startAmbience();
       set({
         record: { ...shared, playerFaction: mine ?? shared.playerFaction },
         battle: localBattle,
+        camView: viewport?.camView ?? get().camView,
         faction: mine ?? get().faction,
         screen: "battle",
       });

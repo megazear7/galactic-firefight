@@ -2,13 +2,7 @@ export const SAVE_VERSION = 7;
 
 export type Faction = "empire" | "brood";
 export type UnitType =
-  | "captain"
-  | "soldier"
-  | "machine_gunner"
-  | "sniper"
-  | "tyrant"
-  | "broodling"
-  | "spatling";
+  "captain" | "soldier" | "machine_gunner" | "sniper" | "tyrant" | "broodling" | "spatling";
 
 export type PointScale = 100 | 200 | 300;
 export type MapSize = "small" | "medium" | "large";
@@ -211,6 +205,15 @@ export type BattleState = {
   explored: boolean[];
   actMode: ActMode;
   hotseatPending: { playerId: string; name: string; color: number } | null;
+};
+
+export type PlayerViewportState = {
+  version: 1;
+  userId: string;
+  camView: { x: number; z: number; w: number; h: number } | null;
+  visible: boolean[];
+  explored: boolean[];
+  updatedAt: string;
 };
 
 export type GameRecord = {

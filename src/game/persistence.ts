@@ -1,4 +1,11 @@
-import type { BattleState, GameRecord, PublicListing, Settings, UnitState } from "./types";
+import type {
+  BattleState,
+  GameRecord,
+  PlayerViewportState,
+  PublicListing,
+  Settings,
+  UnitState,
+} from "./types";
 import { listingOf } from "./lobby";
 import { asListing, mergeListings } from "./listings";
 import { DEFAULT_SETTINGS, SAVE_VERSION } from "./types";
@@ -49,7 +56,10 @@ function migrateBattle(raw: BattleState | null): BattleState | null {
     map: raw.map
       ? {
           ...raw.map,
-          theme: raw.map.theme === "infestation" || raw.map.theme === "wartorn" ? raw.map.theme : "spaceship",
+          theme:
+            raw.map.theme === "infestation" || raw.map.theme === "wartorn"
+              ? raw.map.theme
+              : "spaceship",
           blobs: Array.isArray(raw.map.blobs) ? raw.map.blobs : [],
         }
       : raw.map,
@@ -70,7 +80,10 @@ function migrateGame(raw: GameRecord): GameRecord {
     createdAt: raw.createdAt || nowIso(),
     updatedAt: raw.updatedAt || nowIso(),
     status:
-      raw.status === "victory" || raw.status === "defeat" || raw.status === "setup" || raw.status === "lobby"
+      raw.status === "victory" ||
+      raw.status === "defeat" ||
+      raw.status === "setup" ||
+      raw.status === "lobby"
         ? raw.status
         : "active",
     mode: raw.mode === "multi" ? "multi" : "single",
@@ -78,7 +91,10 @@ function migrateGame(raw: GameRecord): GameRecord {
     mapSize: raw.mapSize === "small" || raw.mapSize === "large" ? raw.mapSize : "medium",
     terrainDensity: raw.terrainDensity === 1 || raw.terrainDensity === 3 ? raw.terrainDensity : 2,
     terrainSize: raw.terrainSize === 1 || raw.terrainSize === 3 ? raw.terrainSize : 2,
-    terrainTheme: raw.terrainTheme === "infestation" || raw.terrainTheme === "wartorn" ? raw.terrainTheme : "spaceship",
+    terrainTheme:
+      raw.terrainTheme === "infestation" || raw.terrainTheme === "wartorn"
+        ? raw.terrainTheme
+        : "spaceship",
     visibility: raw.visibility === "public" ? "public" : "private",
     passcode: raw.passcode,
     participants: raw.participants ?? [],
@@ -152,7 +168,10 @@ export async function listGames(client: UserDataClient | null): Promise<GameReco
   }
 }
 
-export async function getGame(client: UserDataClient | null, id: string): Promise<GameRecord | null> {
+export async function getGame(
+  client: UserDataClient | null,
+  id: string,
+): Promise<GameRecord | null> {
   if (!client) return readLocal().find((g) => g.id === id) ?? null;
   try {
     const rec = await client.get<GameRecord>({
@@ -276,9 +295,10 @@ export async function putSharedGame(
   hostId: string | undefined,
   gameId: string,
   data: GameRecord,
+  actorId?: string,
 ) {
   const key = `${hostId ?? ""}/${gameId}`;
-  const visibility = data.visibility === "public" ? "public" : "shared";
+  const visibility = data.mode === "multi" && data.battle ? "shared" : "public";
   const previous = sharedWrites.get(key) ?? Promise.resolve();
   const write = previous.then(async () => {
     let next = data;
@@ -290,13 +310,21 @@ export async function putSharedGame(
         path: `games/${gameId}/state`,
       });
       const latest = migrateGame(current.data);
+      if (actorId && latest.battle) {
+        const actor = latest.participants.find(
+          (participant) =>
+            participant.userId === actorId || (actorId === latest.hostId && participant.host),
+        );
+        if (!actor || actor.team !== latest.battle.turnTeam) return;
+      }
       const hostParticipant = latest.participants.find((participant) => participant.host);
       const callerIsHost = data.playerId === hostParticipant?.id;
       const participants = callerIsHost
         ? data.participants
         : latest.participants.map((participant) =>
             participant.id === data.playerId
-              ? (data.participants.find((candidate) => candidate.id === data.playerId) ?? participant)
+              ? (data.participants.find((candidate) => candidate.id === data.playerId) ??
+                participant)
               : participant,
           );
       next = {
@@ -329,7 +357,7 @@ export async function getSharedGame(
   hostId: string,
   gameId: string,
 ): Promise<GameRecord | null> {
-  for (const visibility of ["public", "shared"] as const) {
+  for (const visibility of ["shared", "public"] as const) {
     try {
       const rec = await client.get<GameRecord>({
         targetUserId: hostId,
@@ -343,6 +371,41 @@ export async function getSharedGame(
     }
   }
   return null;
+}
+
+export async function putPlayerViewport(
+  client: UserDataClient,
+  hostId: string,
+  gameId: string,
+  viewport: PlayerViewportState,
+) {
+  await client.put({
+    targetUserId: hostId,
+    app: MEGAZEAR_APP,
+    visibility: "public",
+    path: `games/${gameId}/state/${viewport.userId}`,
+    data: viewport,
+  });
+}
+
+export async function listPlayerViewports(
+  client: UserDataClient,
+  hostId: string,
+  gameId: string,
+): Promise<PlayerViewportState[]> {
+  try {
+    const result = await client.listData<PlayerViewportState>({
+      targetUserId: hostId,
+      app: MEGAZEAR_APP,
+      visibility: "public",
+      path: `games/${gameId}/state`,
+    });
+    return result.items
+      .map((item) => item.data)
+      .filter((item) => item?.version === 1 && typeof item.userId === "string");
+  } catch {
+    return [];
+  }
 }
 
 export type AclDoc = {
@@ -429,7 +492,9 @@ async function fetchPublicDirectory(client: UserDataClient | null): Promise<Publ
     const res = await fetch(PUBLIC_DIRECTORY, { headers });
     if (!res.ok) return [];
     const body = (await res.json()) as { games?: unknown };
-    return Array.isArray(body.games) ? body.games.map(asListing).filter((g): g is PublicListing => Boolean(g)) : [];
+    return Array.isArray(body.games)
+      ? body.games.map(asListing).filter((g): g is PublicListing => Boolean(g))
+      : [];
   } catch {
     return [];
   }

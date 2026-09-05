@@ -141,7 +141,7 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
     damage: 0,
     overwatchDamage: 0,
     arc: 360,
-    meleeDamage: 4,
+    meleeDamage: 5,
     meleeRange: 1.35,
     size: 0.78,
     stealth: false,

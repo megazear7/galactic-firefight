@@ -12,7 +12,13 @@ export type UnitModelSet = {
   clips: Record<UnitPose, string[]>;
 };
 
-function numbered(faction: Faction, type: UnitType, pose: string, count: number, filePrefix?: string) {
+function numbered(
+  faction: Faction,
+  type: UnitType,
+  pose: string,
+  count: number,
+  filePrefix?: string,
+) {
   const slug = type.replaceAll("_", "-");
   const poseSlug = pose.replaceAll("_", "-");
   const folder = `/assets/3d/${slug}`;
@@ -58,7 +64,10 @@ function pack(
 }
 
 /** One unanimated mesh used for every pose until clips exist. */
-function staticMesh(url: string, extras: Partial<Pick<UnitModelSet, "yawOffset" | "scale">> = {}): UnitModelSet {
+function staticMesh(
+  url: string,
+  extras: Partial<Pick<UnitModelSet, "yawOffset" | "scale">> = {},
+): UnitModelSet {
   const clips = emptyClips();
   clips.idle = [url];
   return { yawOffset: extras.yawOffset ?? 0, scale: extras.scale ?? 1, clips };
@@ -71,11 +80,11 @@ function staticMesh(url: string, extras: Partial<Pick<UnitModelSet, "yawOffset" 
  */
 const CATALOG: Partial<Record<UnitType, Partial<Record<Faction, UnitModelSet>>>> = {
   soldier: {
-    empire: pack("empire", "soldier", { idle: 1, move: 1, reload: 1, melee: 1, dead: 1 }),
+    empire: pack("empire", "soldier", { idle: 2, move: 1, reload: 1, melee: 1, dead: 1 }),
   },
   captain: {
     empire: pack("empire", "captain", {
-      idle: 1,
+      idle: 2,
       idle_special: 1,
       move: 1,
       ranged: 1,
@@ -85,8 +94,8 @@ const CATALOG: Partial<Record<UnitType, Partial<Record<Faction, UnitModelSet>>>>
   },
   sniper: {
     empire: pack("empire", "sniper", {
-      idle: 1,
-      idle_special: 1,
+      idle: 2,
+      idle_special: 0,
       move: 1,
       ranged: 1,
       melee: 1,
@@ -97,16 +106,26 @@ const CATALOG: Partial<Record<UnitType, Partial<Record<Faction, UnitModelSet>>>>
     empire: staticMesh("/assets/3d/machine-gunner/machine-gunner.glb"),
   },
   broodling: {
-    brood: pack("brood", "broodling", { idle: 1, move: 1, melee: 1, dead: 1 }, { filePrefix: "swarm" }),
+    brood: pack(
+      "brood",
+      "broodling",
+      { idle: 2, move: 1, melee: 1, dead: 1 },
+      { filePrefix: "swarm" },
+    ),
   },
   spatling: {
-    brood: pack("brood", "spatling", { idle: 1, move: 1, ranged: 1, dead: 1 }, { filePrefix: "swarm" }),
+    brood: pack(
+      "brood",
+      "spatling",
+      { idle: 2, move: 1, ranged: 0, dead: 1 },
+      { filePrefix: "swarm" },
+    ),
   },
   tyrant: {
     brood: pack(
       "brood",
       "tyrant",
-      { idle: 1, move: 1, melee: 1, ranged: 1, dead: 1 },
+      { idle: 2, move: 1, melee: 0, ranged: 0, dead: 1 },
       { filePrefix: "swarm", scale: 2 },
     ),
   },
@@ -135,7 +154,12 @@ function hashSeed(seed: string) {
   return h >>> 0;
 }
 
-export function pickModelUrl(type: UnitType, faction: Faction, pose: UnitPose, seed: string): string | null {
+export function pickModelUrl(
+  type: UnitType,
+  faction: Faction,
+  pose: UnitPose,
+  seed: string,
+): string | null {
   const set = unitModelSet(type, faction);
   if (!set) return null;
   const list = (set.clips[pose]?.length ? set.clips[pose] : set.clips.idle) ?? [];
@@ -153,7 +177,12 @@ export function unitPose(
 ): UnitPose {
   if (!unit.alive) return "dead";
   if (battle.phase === "moving" && battle.pendingMove?.unitId === unit.id) return "move";
-  if (battle.phase === "resolving" && battle.pendingShot?.attackerId === unit.id && unit.type && unit.faction) {
+  if (
+    battle.phase === "resolving" &&
+    battle.pendingShot?.attackerId === unit.id &&
+    unit.type &&
+    unit.faction
+  ) {
     if (battle.pendingShot.kind === "melee") {
       if (hasClip(unit.type, unit.faction, "melee")) return "melee";
     } else {
