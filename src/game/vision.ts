@@ -245,3 +245,14 @@ export function revealExplored(state: BattleState): BattleState {
   }
   return changed ? { ...state, explored } : state;
 }
+
+/** Return the local player's view without retaining hidden enemy positions. */
+export function projectPlayerView(state: BattleState, playerId: string): BattleState {
+  const localState = { ...state, playerId, explored: emptyMask(state.map) };
+  const vis = visionMask(localState, localTeam(localState));
+  const units = state.units.filter((unit) => {
+    if (unit.playerId === playerId) return true;
+    return enemyVisible(localState, unit, vis);
+  });
+  return revealExplored({ ...localState, units });
+}

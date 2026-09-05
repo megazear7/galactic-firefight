@@ -20,7 +20,7 @@ import {
   waitUnit,
   ageFx,
 } from "./battle";
-import { emptyMask, localTeam, revealExplored, visionMask } from "./vision";
+import { localTeam, revealExplored, visionMask } from "./vision";
 import type { ActMode } from "./types";
 import { meleeEnemies, rangedTargets } from "./combat";
 import { sfx, unlockAudio, applyVolumes, startAmbience, stopAmbience } from "./audio";
@@ -191,6 +191,7 @@ function blankRecord(partial: Partial<GameRecord>): GameRecord {
 }
 
 const battleAccessConfigured = new Set<string>();
+const syncRequests = new Map<string, number>();
 
 function publishSharedLobby(client: UserDataClient | null, record: GameRecord | null) {
   if (client && record?.mode === "multi" && record.hostId) {
@@ -956,7 +957,11 @@ export const useGame = create<Store>((set, get) => ({
     const hostId = record?.hostId ?? joinHostId;
     const gameId = record?.id ?? joinGameId;
     if (!hostId || !gameId) return;
-    const shared = await getSharedGame(client, hostId, gameId);
+    const syncKey = `${hostId}/${gameId}/${userId}`;
+    const requestId = (syncRequests.get(syncKey) ?? 0) + 1;
+    syncRequests.set(syncKey, requestId);
+    const shared = await getSharedGame(client, hostId, gameId, userId);
+    if (syncRequests.get(syncKey) !== requestId) return;
     if (shared?.status === "lobby") {
       const current = get().record;
       if (!current || shared.updatedAt >= current.updatedAt) {
@@ -976,6 +981,12 @@ export const useGame = create<Store>((set, get) => ({
       );
       if (!local) return;
       const current = get();
+      if (
+        current.record?.mode === "multi" &&
+        current.record.updatedAt >= shared.updatedAt &&
+        current.battle
+      )
+        return;
       if (
         current.battle?.mode === "multi" &&
         current.battle.playerId === local.id &&
@@ -1004,7 +1015,6 @@ export const useGame = create<Store>((set, get) => ({
       const localBattle = {
         ...shared.battle,
         playerId: local.id,
-        explored: emptyMask(shared.battle.map),
         playerFaction: mine ?? shared.battle.playerFaction,
         phase:
           !isLocalTurn && shared.battle.phase !== "gameOver"

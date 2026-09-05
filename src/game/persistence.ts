@@ -11,6 +11,7 @@ import { asListing, mergeListings } from "./listings";
 import { DEFAULT_SETTINGS, SAVE_VERSION } from "./types";
 import { MEGAZEAR_APP } from "@/lib/identity/config";
 import { UserDataClient, UserDataError } from "@/lib/identity/megazear-users";
+import { projectPlayerView } from "./vision";
 
 const LOCAL_GAMES = "gff.games.v1";
 const LOCAL_SETTINGS = "gff.settings.v1";
@@ -327,9 +328,20 @@ export async function putSharedGame(
                 participant)
               : participant,
           );
+      const mergedBattle =
+        latest.battle && data.battle
+          ? {
+              ...latest.battle,
+              ...data.battle,
+              units: latest.battle.units.map(
+                (unit) => data.battle?.units.find((candidate) => candidate.id === unit.id) ?? unit,
+              ),
+            }
+          : (data.battle ?? latest.battle);
       next = {
         ...latest,
         ...data,
+        battle: mergedBattle,
         participants,
       };
     } catch {
@@ -369,6 +381,7 @@ export async function getSharedGame(
   client: UserDataClient,
   hostId: string,
   gameId: string,
+  viewerUserId?: string,
 ): Promise<GameRecord | null> {
   for (const visibility of ["shared", "public"] as const) {
     try {
@@ -378,7 +391,18 @@ export async function getSharedGame(
         visibility,
         path: `games/${gameId}/state`,
       });
-      return migrateGame(rec.data);
+      const game = migrateGame(rec.data);
+      if (!viewerUserId || !game.battle) return game;
+      const local = game.participants.find(
+        (participant) =>
+          participant.userId === viewerUserId || (viewerUserId === hostId && participant.host),
+      );
+      if (!local) return null;
+      return {
+        ...game,
+        playerId: local.id,
+        battle: projectPlayerView(game.battle, local.id),
+      };
     } catch (error) {
       if (!(error instanceof UserDataError) || error.status !== 404) return null;
     }

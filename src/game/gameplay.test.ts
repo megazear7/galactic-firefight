@@ -31,7 +31,7 @@ import { UNIT_STATS, isFaction, unitSpecials } from "./units.ts";
 import { MAP_SLOT_CAP } from "./types.ts";
 import { findPath, pathCost, blockedAt } from "./pathfinding.ts";
 import { circleHitsTerrain, dist, generateMap, idx, isBlocked, MAP_DIMS } from "./map.ts";
-import { enemyVisible, visionMask } from "./vision.ts";
+import { enemyVisible, projectPlayerView, visionMask } from "./vision.ts";
 import {
   hasClip,
   hasDeathClip,
@@ -707,6 +707,30 @@ describe("fog of war", () => {
     const vis = visionMask({ ...state, playerId: "p-guest" }, 2);
     assert.equal(enemyVisible({ ...state, playerId: "p-guest" }, guest, vis), true);
     assert.equal(enemyVisible({ ...state, playerId: "p-guest" }, host, vis), false);
+  });
+
+  it("projects hidden enemy positions out of a multiplayer snapshot", () => {
+    const map = floorMap(12, 8);
+    const guest = unit({ id: "guest", playerId: "p-guest", team: 2, col: 1, row: 1 });
+    const hiddenHost = unit({ id: "host", playerId: "p-host", team: 1, col: 10, row: 6 });
+    const state = {
+      map,
+      units: [guest, hiddenHost],
+      participants: [
+        { id: "p-host", team: 1 },
+        { id: "p-guest", team: 2 },
+      ],
+      playerId: "p-host",
+      mode: "multi",
+      explored: Array(map.cols * map.rows).fill(false),
+    } as unknown as BattleState;
+
+    const projected = projectPlayerView(state, "p-guest");
+
+    assert.deepEqual(
+      projected.units.map((candidate) => candidate.id),
+      ["guest"],
+    );
   });
 
   it("reveals a wall you are looking at, including diagonally", () => {
