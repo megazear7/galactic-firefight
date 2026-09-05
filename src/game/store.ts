@@ -1017,7 +1017,12 @@ export const useGame = create<Store>((set, get) => ({
       const locallyRevealed = revealExplored(localBattle);
       startAmbience();
       set({
-        record: { ...shared, playerFaction: mine ?? shared.playerFaction },
+        record: {
+          ...shared,
+          playerId: local?.id ?? shared.playerId,
+          playerFaction: mine ?? shared.playerFaction,
+          battle: locallyRevealed,
+        },
         battle: locallyRevealed,
         camView: viewport?.camView ?? get().camView,
         faction: mine ?? get().faction,

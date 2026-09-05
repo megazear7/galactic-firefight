@@ -335,9 +335,18 @@ export async function putSharedGame(
     } catch {
       // The first write creates the shared document.
     }
+    const hostParticipant = next.participants.find((participant) => participant.host);
     const sharedData =
       visibility === "shared" && next.battle
-        ? { ...next, battle: { ...next.battle, explored: [] } }
+        ? {
+            ...next,
+            playerId: hostParticipant?.id ?? next.playerId,
+            battle: {
+              ...next.battle,
+              playerId: hostParticipant?.id ?? next.battle.playerId,
+              explored: [],
+            },
+          }
         : next;
     await client.put({
       targetUserId: hostId,
