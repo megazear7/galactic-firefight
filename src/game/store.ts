@@ -975,6 +975,14 @@ export const useGame = create<Store>((set, get) => ({
         (participant) => participant.userId === userId || (userId === hostId && participant.host),
       );
       if (!local) return;
+      const current = get();
+      if (
+        current.battle?.mode === "multi" &&
+        current.battle.playerId === local.id &&
+        current.battle.turnTeam === local.team &&
+        shared.battle.turnTeam === local.team
+      )
+        return;
       const accessKey = `${hostId}/${gameId}`;
       if (userId === hostId && client && !battleAccessConfigured.has(accessKey)) {
         const guest = shared.participants.find(
