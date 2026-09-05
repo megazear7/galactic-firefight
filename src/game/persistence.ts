@@ -412,6 +412,7 @@ export type AclDoc = {
   version: 1;
   updatedAt: string;
   publicWrite?: boolean;
+  publicWriteByUser?: string[];
   entries: Array<{
     id: string;
     principal: { type: "user" | "email"; id: string };
@@ -461,6 +462,7 @@ export async function grantGuestAcl(
     version: 1,
     updatedAt: ts,
     publicWrite: existing.publicWrite,
+    publicWriteByUser: existing.publicWriteByUser,
     entries,
   });
 }
