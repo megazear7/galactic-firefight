@@ -930,7 +930,7 @@ export function endTurn(state: BattleState): BattleState {
       };
     }),
   );
-  const locals = deviceOnTeam({ ...state, units }, nextTeam);
+  const locals = state.mode === "multi" ? [] : deviceOnTeam({ ...state, units }, nextTeam);
   const nextLocal = locals[0];
   const enemyPhase = nextLocal ? "select" : "enemyTurn";
   const hold =

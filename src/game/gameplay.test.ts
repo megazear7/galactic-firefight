@@ -657,6 +657,47 @@ describe("hotseat", () => {
     assert.equal(state.phase, "select");
     assert.equal(canControl(state), true);
   });
+
+  it("keeps a guest as the local player when the host gets the next turn", () => {
+    const state = createBattle({
+      seed: 7,
+      mapSize: "small",
+      participants: [
+        {
+          id: "p-host",
+          kind: "human",
+          name: "Host",
+          faction: "empire",
+          team: 1,
+          color: 0,
+          army: { captain: 1, soldier: 1 },
+          ready: true,
+          host: true,
+        },
+        {
+          id: "p-guest",
+          kind: "human",
+          name: "Guest",
+          faction: "brood",
+          team: 2,
+          color: 1,
+          army: { tyrant: 1, broodling: 2 },
+          ready: true,
+          host: false,
+        },
+      ],
+      localPlayerId: "p-guest",
+      teamOrder: [2, 1],
+      mode: "multi",
+    });
+
+    const next = endTurn(state);
+
+    assert.equal(next.turnTeam, 1);
+    assert.equal(next.playerId, "p-guest");
+    assert.equal(next.phase, "enemyTurn");
+    assert.equal(canControl(next), false);
+  });
 });
 
 function visOf(map: BattleMap, u: UnitState, extras: UnitState[] = []) {
