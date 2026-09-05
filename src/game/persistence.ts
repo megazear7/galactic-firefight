@@ -551,18 +551,21 @@ export async function getPublicGame(
 ): Promise<GameRecord | null> {
   const local = readLocal().find((g) => g.id === gameId) ?? null;
   if (!client || !hostId) return local;
-  try {
-    const rec = await client.get<GameRecord>({
-      targetUserId: hostId,
-      app: MEGAZEAR_APP,
-      visibility: "public",
-      path: `games/${gameId}`,
-    });
-    return migrateGame(rec.data);
-  } catch {
-    const shared = await getSharedGame(client, hostId, gameId);
-    return shared ?? local;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const rec = await client.get<GameRecord>({
+        targetUserId: hostId,
+        app: MEGAZEAR_APP,
+        visibility: "public",
+        path: `games/${gameId}`,
+      });
+      return migrateGame(rec.data);
+    } catch {
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 250));
+    }
   }
+  const shared = await getSharedGame(client, hostId, gameId);
+  return shared ?? local;
 }
 
 export async function listPublicLobbies(client: UserDataClient | null): Promise<PublicListing[]> {
@@ -620,14 +623,14 @@ export async function upsertPublicLobby(
     await client.put({
       app: MEGAZEAR_APP,
       visibility: "public",
-      path: `lobbies/${rec.id}`,
-      data: listing,
+      path: `games/${rec.id}`,
+      data: rec,
     });
     await client.put({
       app: MEGAZEAR_APP,
       visibility: "public",
-      path: `games/${rec.id}`,
-      data: rec,
+      path: `lobbies/${rec.id}`,
+      data: listing,
     });
     await publishPublicDirectory(client, listing);
     return null;
