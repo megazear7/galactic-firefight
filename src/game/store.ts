@@ -31,7 +31,6 @@ import {
   loadSettings,
   newGameId,
   putHostLobby,
-  getPlayerViewport,
   putPlayerViewport,
   putSharedGame,
   removePublicLobby,
@@ -972,7 +971,6 @@ export const useGame = create<Store>((set, get) => ({
       return;
     }
     if (shared?.battle) {
-      const current = get().record;
       const local = shared.participants.find(
         (participant) => participant.userId === userId || (userId === hostId && participant.host),
       );
@@ -993,19 +991,12 @@ export const useGame = create<Store>((set, get) => ({
           }
         }
       }
-      if (
-        current?.updatedAt &&
-        shared.updatedAt <= current.updatedAt &&
-        current.battle?.turnTeam === shared.battle.turnTeam &&
-        current.playerId === local.id &&
-        current.battle?.playerId === local.id
-      )
-        return;
       const mine = local.faction ?? (userId === hostId ? shared.hostFaction : shared.guestFaction);
       const isLocalTurn = local.team === shared.battle.turnTeam;
       const localBattle = {
         ...shared.battle,
         playerId: local.id,
+        explored: emptyMask(shared.battle.map),
         playerFaction: mine ?? shared.battle.playerFaction,
         phase:
           !isLocalTurn && shared.battle.phase !== "gameOver"
@@ -1014,8 +1005,6 @@ export const useGame = create<Store>((set, get) => ({
               ? "select"
               : shared.battle.phase,
       };
-      const viewport = await getPlayerViewport(client, hostId, gameId, userId);
-      localBattle.explored = viewport?.explored ?? emptyMask(localBattle.map);
       const locallyRevealed = revealExplored(localBattle);
       startAmbience();
       set({
@@ -1026,7 +1015,7 @@ export const useGame = create<Store>((set, get) => ({
           battle: locallyRevealed,
         },
         battle: locallyRevealed,
-        camView: viewport?.camView ?? get().camView,
+        camView: get().camView,
         faction: mine ?? get().faction,
         screen: "battle",
       });
