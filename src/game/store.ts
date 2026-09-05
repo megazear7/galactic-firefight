@@ -803,7 +803,16 @@ export const useGame = create<Store>((set, get) => ({
     const battle = get().battle;
     if (!battle) return;
     sfx.ui();
-    set({ battle: endTurn(battle), aiTimer: 0.4 });
+    const next = endTurn(battle);
+    set({ battle: next, aiTimer: 0.4 });
+    if (next.turnTeam !== battle.turnTeam) {
+      const record = get().record;
+      const participant = record?.participants.find(
+        (candidate) => candidate.id === battle.playerId,
+      );
+      const actorId = participant?.userId ?? (participant?.host ? record?.hostId : undefined);
+      void get().persist(get().dataClient, actorId);
+    }
   },
   surrender: () => {
     const battle = get().battle;
@@ -907,7 +916,10 @@ export const useGame = create<Store>((set, get) => ({
       void putPlayerViewport(client, record.hostId, record.id, viewport);
     }
     if (record.mode === "multi") {
-      if (!participant || participant.team !== battle.turnTeam) return;
+      const handingOffTurn =
+        participant?.team === record.battle?.turnTeam &&
+        record.battle?.turnTeam !== battle.turnTeam;
+      if (!participant || (participant.team !== battle.turnTeam && !handingOffTurn)) return;
     }
     const status: GameRecord["status"] =
       battle.winner === (record.participants.find((p) => p.id === record.playerId)?.team ?? 1)

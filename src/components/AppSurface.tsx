@@ -63,7 +63,7 @@ export function AppSurface() {
       if (document.visibilityState !== "visible") return;
       void useGame.getState().syncMulti(identity.client!, userId!);
     };
-    const id = window.setInterval(sync, 1000);
+    const id = window.setInterval(sync, 30_000);
     document.addEventListener("visibilitychange", sync);
     return () => {
       window.clearInterval(id);
