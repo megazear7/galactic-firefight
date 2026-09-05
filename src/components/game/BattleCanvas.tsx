@@ -67,7 +67,11 @@ function CameraRig() {
     if (!battle || !controls.current) return;
     if (seeded.current === battle.map.seed) return;
     seeded.current = battle.map.seed;
-    const mine = battle.units.filter((u) => u.alive && u.team === localTeam(battle));
+    const mine = battle.units.filter(
+      (u) =>
+        u.alive &&
+        (battle.mode === "multi" ? u.playerId === battle.playerId : u.team === localTeam(battle)),
+    );
     if (!mine.length) return;
     const col = mine.reduce((s, u) => s + u.col, 0) / mine.length;
     const row = mine.reduce((s, u) => s + u.row, 0) / mine.length;
@@ -203,7 +207,9 @@ function Scene() {
   }, []);
 
   const visKey = battle
-    ? battle.units.map((u) => `${u.id}:${u.alive ? 1 : 0}:${u.col.toFixed(2)},${u.row.toFixed(2)}`).join("|")
+    ? battle.units
+        .map((u) => `${u.id}:${u.alive ? 1 : 0}:${u.col.toFixed(2)},${u.row.toFixed(2)}`)
+        .join("|")
     : "";
   const vis = useMemo(
     () => (battle ? visionMask(battle, localTeam(battle)) : []),
@@ -268,7 +274,11 @@ function Scene() {
             if (battle.phase === "aimShoot") return;
           }
           const occupant = nearestUnit(col, row, battle.units, 0.5);
-          if (occupant && occupant.team !== localTeam(battle) && !enemyVisible(battle, occupant, vis)) {
+          if (
+            occupant &&
+            occupant.team !== localTeam(battle) &&
+            !enemyVisible(battle, occupant, vis)
+          ) {
             clickTile(col, row);
             return;
           }
@@ -319,7 +329,9 @@ function Scene() {
       {battle.units.map((u) => {
         const modeled = settings.graphics !== "sprites" && hasUnitModel(u.type, u.faction);
         if (!u.alive && !(modeled && hasDeathClip(u.type, u.faction))) return null;
-        const hidden = u.alive ? !enemyVisible(battle, u, vis) : !tileExplored(battle, u.col, u.row);
+        const hidden = u.alive
+          ? !enemyVisible(battle, u, vis)
+          : !tileExplored(battle, u.col, u.row);
         return (
           <group
             key={u.id}

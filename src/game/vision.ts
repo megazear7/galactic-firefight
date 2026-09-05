@@ -31,7 +31,12 @@ function hitsOtherTerrain(
   exceptRow: number,
 ) {
   const pad = radius;
-  if (col < -0.5 + pad || row < -0.5 + pad || col > map.cols - 0.5 - pad || row > map.rows - 0.5 - pad) {
+  if (
+    col < -0.5 + pad ||
+    row < -0.5 + pad ||
+    col > map.cols - 0.5 - pad ||
+    row > map.rows - 0.5 - pad
+  ) {
     return true;
   }
   const c0 = Math.floor(col - radius);
@@ -54,16 +59,13 @@ function hitsOtherTerrain(
 }
 
 function inTile(col: number, row: number, tc: number, tr: number, pad: number) {
-  return col >= tc - 0.5 - pad && col <= tc + 0.5 + pad && row >= tr - 0.5 - pad && row <= tr + 0.5 + pad;
+  return (
+    col >= tc - 0.5 - pad && col <= tc + 0.5 + pad && row >= tr - 0.5 - pad && row <= tr + 0.5 + pad
+  );
 }
 
 /** True when a ray from the unit reaches this obstacle's facing surface. */
-function canSeeTerrainFace(
-  unit: UnitState,
-  map: BattleMap,
-  col: number,
-  row: number,
-) {
+function canSeeTerrainFace(unit: UnitState, map: BattleMap, col: number, row: number) {
   const cap = sightRange(unit.type);
   const faceCol = clamp(unit.col, col - 0.5, col + 0.5);
   const faceRow = clamp(unit.row, row - 0.5, row + 0.5);
@@ -123,7 +125,12 @@ function revealTerrainVolume(vis: boolean[], map: BattleMap) {
   return out;
 }
 
-function forEachDiskTile(map: BattleMap, blob: TerrainBlob, pad: number, fn: (i: number, col: number, row: number) => void) {
+function forEachDiskTile(
+  map: BattleMap,
+  blob: TerrainBlob,
+  pad: number,
+  fn: (i: number, col: number, row: number) => void,
+) {
   const reach = blob.radius + pad;
   const r2 = reach * reach;
   const c0 = Math.max(0, Math.floor(blob.col - reach));
@@ -161,10 +168,10 @@ function revealInfestationBlobs(vis: boolean[], map: BattleMap) {
 export function visionMask(state: BattleState, team: number): boolean[] {
   const { map, units } = state;
   const vis = emptyMask(map);
-  const hotseat = devicePlayers(state.participants ?? []).length >= 2;
+  const privateView = state.mode === "multi" || devicePlayers(state.participants ?? []).length >= 2;
   const viewers = units.filter((u) => {
     if (!u.alive) return false;
-    if (hotseat) return u.playerId === state.playerId;
+    if (privateView) return u.playerId === state.playerId;
     return u.team === team;
   });
   for (const unit of viewers) {
@@ -207,16 +214,16 @@ export function localTeam(state: BattleState) {
 }
 
 export function enemyVisible(state: BattleState, unit: UnitState, vis: boolean[]) {
-  if (devicePlayers(state.participants ?? []).length >= 2) {
+  const privateView = state.mode === "multi" || devicePlayers(state.participants ?? []).length >= 2;
+  if (privateView) {
     if (unit.playerId === state.playerId) return true;
   } else if (unit.team === localTeam(state)) {
     return true;
   }
   if (tileVisibleNow(vis, state.map, unit.col, unit.row)) return true;
-  const hotseat = devicePlayers(state.participants ?? []).length >= 2;
   const viewers = state.units.filter((u) => {
     if (!u.alive) return false;
-    if (hotseat) return u.playerId === state.playerId;
+    if (privateView) return u.playerId === state.playerId;
     return u.team === localTeam(state);
   });
   for (const v of viewers) {

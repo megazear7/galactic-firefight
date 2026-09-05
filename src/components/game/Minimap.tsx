@@ -107,7 +107,8 @@ export function Minimap() {
           ctx.fillStyle = "#050608";
         } else {
           const kind = map.tiles[i];
-          if (kind === "wall" || kind === "structure") ctx.fillStyle = vis[i] ? "#7a808a" : "#3d4148";
+          if (kind === "wall" || kind === "structure")
+            ctx.fillStyle = vis[i] ? "#7a808a" : "#3d4148";
           else if (kind === "difficult") ctx.fillStyle = vis[i] ? "#8a6e52" : "#4a3c30";
           else if (kind === "door") ctx.fillStyle = vis[i] ? "#3a342c" : "#1c1a16";
           else ctx.fillStyle = vis[i] ? "#2a2e34" : "#16181c";
@@ -117,7 +118,8 @@ export function Minimap() {
     }
     for (const u of battle.units) {
       if (!u.alive) continue;
-      const friendly = u.team === localTeam(battle);
+      const friendly =
+        battle.mode === "multi" ? u.playerId === battle.playerId : u.team === localTeam(battle);
       if (!friendly && !enemyVisible(battle, u, vis)) continue;
       const p = tileToWorld(u.col, u.row, map);
       const c = toCanvas(p.x, p.z);

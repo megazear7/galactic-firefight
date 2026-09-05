@@ -998,6 +998,7 @@ export const useGame = create<Store>((set, get) => ({
       const local = shared.participants.find(
         (participant) => participant.userId === userId || (userId === hostId && participant.host),
       );
+      if (!local) return;
       const mine = local?.faction ?? (userId === hostId ? shared.hostFaction : shared.guestFaction);
       const isLocalTurn = local?.team === shared.battle.turnTeam;
       const localBattle = {
