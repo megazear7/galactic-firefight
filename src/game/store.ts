@@ -20,7 +20,7 @@ import {
   waitUnit,
   ageFx,
 } from "./battle";
-import { localTeam, revealExplored, visionMask } from "./vision";
+import { emptyMask, localTeam, revealExplored, visionMask } from "./vision";
 import type { ActMode } from "./types";
 import { meleeEnemies, rangedTargets } from "./combat";
 import { sfx, unlockAudio, applyVolumes, startAmbience, stopAmbience } from "./audio";
@@ -1013,13 +1013,12 @@ export const useGame = create<Store>((set, get) => ({
       };
       const viewports = await listPlayerViewports(client, hostId, gameId);
       const viewport = viewports.find((candidate) => candidate.userId === userId);
-      if (viewport) {
-        localBattle.explored = viewport.explored;
-      }
+      localBattle.explored = viewport?.explored ?? emptyMask(localBattle.map);
+      const locallyRevealed = revealExplored(localBattle);
       startAmbience();
       set({
         record: { ...shared, playerFaction: mine ?? shared.playerFaction },
-        battle: localBattle,
+        battle: locallyRevealed,
         camView: viewport?.camView ?? get().camView,
         faction: mine ?? get().faction,
         screen: "battle",

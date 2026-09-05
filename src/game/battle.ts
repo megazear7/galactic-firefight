@@ -431,7 +431,7 @@ export function checkWinner(state: BattleState): BattleState {
 }
 
 function teamIsLocal(state: BattleState, team = state.turnTeam) {
-  return deviceOnTeam(state, team).length > 0;
+  return localParticipant(state)?.team === team;
 }
 
 function resumeSide(state: BattleState): BattleState {

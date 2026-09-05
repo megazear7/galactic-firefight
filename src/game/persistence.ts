@@ -335,12 +335,16 @@ export async function putSharedGame(
     } catch {
       // The first write creates the shared document.
     }
+    const sharedData =
+      visibility === "shared" && next.battle
+        ? { ...next, battle: { ...next.battle, explored: [] } }
+        : next;
     await client.put({
       targetUserId: hostId,
       app: MEGAZEAR_APP,
       visibility,
       path: `games/${gameId}/state`,
-      data: next,
+      data: sharedData,
     });
   });
   const queued = write.catch(() => undefined);
