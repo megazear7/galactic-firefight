@@ -401,23 +401,23 @@ export async function putPlayerViewport(
   });
 }
 
-export async function listPlayerViewports(
+export async function getPlayerViewport(
   client: UserDataClient,
   hostId: string,
   gameId: string,
-): Promise<PlayerViewportState[]> {
+  userId: string,
+): Promise<PlayerViewportState | null> {
   try {
-    const result = await client.listData<PlayerViewportState>({
+    const result = await client.get<PlayerViewportState>({
       targetUserId: hostId,
       app: MEGAZEAR_APP,
       visibility: "public",
-      path: `games/${gameId}/state`,
+      path: `games/${gameId}/state/${userId}`,
     });
-    return result.items
-      .map((item) => item.data)
-      .filter((item) => item?.version === 1 && typeof item.userId === "string");
+    const viewport = result.data;
+    return viewport?.version === 1 && viewport.userId === userId ? viewport : null;
   } catch {
-    return [];
+    return null;
   }
 }
 

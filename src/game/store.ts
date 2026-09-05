@@ -31,7 +31,7 @@ import {
   loadSettings,
   newGameId,
   putHostLobby,
-  listPlayerViewports,
+  getPlayerViewport,
   putPlayerViewport,
   putSharedGame,
   removePublicLobby,
@@ -1014,8 +1014,7 @@ export const useGame = create<Store>((set, get) => ({
               ? "select"
               : shared.battle.phase,
       };
-      const viewports = await listPlayerViewports(client, hostId, gameId);
-      const viewport = viewports.find((candidate) => candidate.userId === userId);
+      const viewport = await getPlayerViewport(client, hostId, gameId, userId);
       localBattle.explored = viewport?.explored ?? emptyMask(localBattle.map);
       const locallyRevealed = revealExplored(localBattle);
       startAmbience();
