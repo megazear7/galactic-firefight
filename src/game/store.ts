@@ -973,6 +973,10 @@ export const useGame = create<Store>((set, get) => ({
     }
     if (shared?.battle) {
       const current = get().record;
+      const local = shared.participants.find(
+        (participant) => participant.userId === userId || (userId === hostId && participant.host),
+      );
+      if (!local) return;
       const accessKey = `${hostId}/${gameId}`;
       if (userId === hostId && client && !battleAccessConfigured.has(accessKey)) {
         const guest = shared.participants.find(
@@ -992,23 +996,21 @@ export const useGame = create<Store>((set, get) => ({
       if (
         current?.updatedAt &&
         shared.updatedAt <= current.updatedAt &&
-        current.battle?.turnTeam === shared.battle.turnTeam
+        current.battle?.turnTeam === shared.battle.turnTeam &&
+        current.playerId === local.id &&
+        current.battle?.playerId === local.id
       )
         return;
-      const local = shared.participants.find(
-        (participant) => participant.userId === userId || (userId === hostId && participant.host),
-      );
-      if (!local) return;
-      const mine = local?.faction ?? (userId === hostId ? shared.hostFaction : shared.guestFaction);
-      const isLocalTurn = local?.team === shared.battle.turnTeam;
+      const mine = local.faction ?? (userId === hostId ? shared.hostFaction : shared.guestFaction);
+      const isLocalTurn = local.team === shared.battle.turnTeam;
       const localBattle = {
         ...shared.battle,
-        playerId: local?.id ?? shared.battle.playerId,
+        playerId: local.id,
         playerFaction: mine ?? shared.battle.playerFaction,
         phase:
-          local && !isLocalTurn && shared.battle.phase !== "gameOver"
+          !isLocalTurn && shared.battle.phase !== "gameOver"
             ? "enemyTurn"
-            : local && isLocalTurn && shared.battle.phase === "enemyTurn"
+            : isLocalTurn && shared.battle.phase === "enemyTurn"
               ? "select"
               : shared.battle.phase,
       };
@@ -1020,7 +1022,7 @@ export const useGame = create<Store>((set, get) => ({
       set({
         record: {
           ...shared,
-          playerId: local?.id ?? shared.playerId,
+          playerId: local.id,
           playerFaction: mine ?? shared.playerFaction,
           battle: locallyRevealed,
         },

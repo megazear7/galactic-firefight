@@ -213,11 +213,9 @@ function placeArmy(
 }
 
 export function localParticipant(state: BattleState) {
-  return (
-    state.participants.find((p) => p.id === state.playerId) ??
-    state.participants.find((p) => p.host) ??
-    null
-  );
+  const local = state.participants.find((p) => p.id === state.playerId);
+  if (local || state.mode === "multi") return local ?? null;
+  return state.participants.find((p) => p.host) ?? null;
 }
 
 export function hotseatActive(state: BattleState) {

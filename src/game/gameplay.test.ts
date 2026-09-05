@@ -25,6 +25,7 @@ import {
   beginHotseat,
   endTurn,
   canControl,
+  localParticipant,
 } from "./battle.ts";
 import { UNIT_STATS, isFaction, unitSpecials } from "./units.ts";
 import { MAP_SLOT_CAP } from "./types.ts";
@@ -671,6 +672,43 @@ function visOf(map: BattleMap, u: UnitState, extras: UnitState[] = []) {
 }
 
 describe("fog of war", () => {
+  it("never falls back to the host view for an online player", () => {
+    const map = floorMap(16, 10);
+    const host = unit({ id: "host-unit", col: 1, row: 1, playerId: "p-host", team: 1 });
+    const guest = unit({ id: "guest-unit", col: 14, row: 8, playerId: "p-guest", team: 2 });
+    const state = {
+      map,
+      units: [host, guest],
+      participants: [
+        {
+          id: "p-host",
+          kind: "human",
+          name: "Host",
+          team: 1,
+          color: 0,
+          faction: "empire",
+          host: true,
+        },
+        {
+          id: "p-guest",
+          kind: "human",
+          name: "Guest",
+          team: 2,
+          color: 1,
+          faction: "brood",
+          host: false,
+        },
+      ],
+      playerId: "p-missing",
+      mode: "multi",
+      explored: Array(map.cols * map.rows).fill(false),
+    } as unknown as BattleState;
+    assert.equal(localParticipant(state), null);
+    const vis = visionMask({ ...state, playerId: "p-guest" }, 2);
+    assert.equal(enemyVisible({ ...state, playerId: "p-guest" }, guest, vis), true);
+    assert.equal(enemyVisible({ ...state, playerId: "p-guest" }, host, vis), false);
+  });
+
   it("reveals a wall you are looking at, including diagonally", () => {
     const map = floorMap(12, 8);
     setTile(map, 6, 3, "wall");
