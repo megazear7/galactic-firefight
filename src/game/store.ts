@@ -902,7 +902,10 @@ export const useGame = create<Store>((set, get) => ({
       return;
     }
     const participant = record.participants.find(
-      (candidate) => candidate.userId === actorId || (actorId === record.hostId && candidate.host),
+      (candidate) =>
+        candidate.id === battle.playerId ||
+        candidate.userId === actorId ||
+        (actorId === record.hostId && candidate.host),
     );
     if (record.mode === "multi" && client && actorId && record.hostId && participant) {
       const viewport: PlayerViewportState = {
